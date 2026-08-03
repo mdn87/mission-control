@@ -39,6 +39,7 @@ import { SystemMonitorPanel } from '@/components/panels/system-monitor-panel'
 import { ChatPagePanel } from '@/components/panels/chat-page-panel'
 import { ChatPanel } from '@/components/chat/chat-panel'
 import { LugosSpatialOverview } from '@/integrations/lugos/lugos-spatial-overview'
+import { isLugosOperatorMode } from '@/integrations/lugos/operator-mode'
 import { STORAGE_GATEWAY_URL } from '@/lib/device-identity'
 import { getPluginPanel } from '@/lib/plugins'
 import { shouldRedirectDashboardToHttps } from '@/lib/browser-security'
@@ -95,6 +96,7 @@ function renderPluginPanel(panelId: string) {
 }
 
 export default function Home() {
+  const lugosOperatorMode = isLugosOperatorMode()
   const router = useRouter()
   const { connect } = useWebSocket()
   const tb = useTranslations('boot')
@@ -375,28 +377,32 @@ export default function Home() {
     // flags → shouldOpen:false (no-op) → markStep('config'). apiFetch throws on non-ok
     // instead, hitting the .catch that also marks 'config' — same net effect (onboarding
     // stays closed, boot step completes).
-    apiFetch<{ isAdmin?: boolean; showOnboarding?: boolean; completed?: boolean; skipped?: boolean }>('/api/onboarding')
-      .then(data => {
-        const decision = getOnboardingSessionDecision({
-          isAdmin: data?.isAdmin === true,
-          serverShowOnboarding: data?.showOnboarding === true,
-          completed: data?.completed === true,
-          skipped: data?.skipped === true,
-          dismissedThisSession: readOnboardingDismissedThisSession(),
-        })
+    if (lugosOperatorMode) {
+      markStep('config')
+    } else {
+      apiFetch<{ isAdmin?: boolean; showOnboarding?: boolean; completed?: boolean; skipped?: boolean }>('/api/onboarding')
+        .then(data => {
+          const decision = getOnboardingSessionDecision({
+            isAdmin: data?.isAdmin === true,
+            serverShowOnboarding: data?.showOnboarding === true,
+            completed: data?.completed === true,
+            skipped: data?.skipped === true,
+            dismissedThisSession: readOnboardingDismissedThisSession(),
+          })
 
-        if (decision.shouldOpen) {
-          clearOnboardingDismissedThisSession()
-          if (decision.replayFromStart) {
-            markOnboardingReplayFromStart()
-          } else {
-            clearOnboardingReplayFromStart()
+          if (decision.shouldOpen) {
+            clearOnboardingDismissedThisSession()
+            if (decision.replayFromStart) {
+              markOnboardingReplayFromStart()
+            } else {
+              clearOnboardingReplayFromStart()
+            }
+            setShowOnboarding(true)
           }
-          setShowOnboarding(true)
-        }
-        markStep('config')
-      })
-      .catch(() => { markStep('config') })
+          markStep('config')
+        })
+        .catch(() => { markStep('config') })
+    }
     // Preload workspace data in parallel.
     // Each call previously mapped non-ok → null data → the `data?.…` guard skipped the
     // setter. apiFetch throws on non-ok instead; the rejection is absorbed by
@@ -457,7 +463,7 @@ export default function Home() {
         {!showOnboarding && (
           <>
             <HeaderBar />
-            <LocalModeBanner />
+            {!lugosOperatorMode && <LocalModeBanner />}
             <UpdateBanner />
             <OpenClawUpdateBanner />
             <OpenClawDoctorBanner />
@@ -512,7 +518,7 @@ export default function Home() {
         />
       )}
 
-      <OnboardingWizard />
+      {!lugosOperatorMode && <OnboardingWizard />}
     </div>
   )
 }

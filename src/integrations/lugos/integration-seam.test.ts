@@ -41,6 +41,8 @@ describe('Lugos Mission Control adoption seam', () => {
     expect(source).toContain("import '@/integrations/lugos/register'")
     expect(source).toContain("import { LugosSpatialOverview } from '@/integrations/lugos/lugos-spatial-overview'")
     expect(source).toMatch(/case 'overview':\s+return <LugosSpatialOverview \/>/)
+    expect(source).toContain('!lugosOperatorMode && <LocalModeBanner />')
+    expect(source).toContain('!lugosOperatorMode && <OnboardingWizard />')
   })
 
   it('keeps map placement derived and limits motion to active state', () => {

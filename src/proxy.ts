@@ -179,6 +179,26 @@ export function proxy(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl
+  const publicReadOnlyPatterns = String(
+    process.env.MC_LUGOS_PUBLIC_READ_ONLY_HOSTS || '',
+  )
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const isPublicReadOnlyOrigin = publicReadOnlyPatterns.length > 0
+    && requestHosts.some((hostName) =>
+      publicReadOnlyPatterns.some((pattern) => hostMatches(pattern, hostName))
+    )
+
+  if (isPublicReadOnlyOrigin && pathname === '/api/lugos/commands') {
+    return addSecurityHeaders(
+      NextResponse.json(
+        { error: 'Lugos commands are disabled on the public origin' },
+        { status: 403 },
+      ),
+      request,
+    )
+  }
 
   // CSRF Origin validation for mutating requests
   const method = request.method.toUpperCase()

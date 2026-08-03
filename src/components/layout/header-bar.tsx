@@ -12,6 +12,7 @@ import { ThemeSelector } from '@/components/ui/theme-selector'
 import { LanguageSwitcher } from '@/components/ui/language-switcher'
 import { DigitalClock } from '@/components/ui/digital-clock'
 import { getNavigationMetrics, navigationMetricEventName } from '@/lib/navigation-metrics'
+import { isLugosOperatorMode } from '@/integrations/lugos/operator-mode'
 
 interface SearchResult {
   type: string
@@ -467,6 +468,15 @@ function ModeBadge({
   const th = useTranslations('header')
   const isLocal = dashboardMode === 'local'
   const [showTooltip, setShowTooltip] = useState(false)
+
+  if (isLugosOperatorMode()) {
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-2xs bg-violet-500/10 border border-violet-500/25">
+        <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+        <span className="font-medium text-violet-300">Lugos</span>
+      </div>
+    )
+  }
 
   if (isLocal) {
     return (

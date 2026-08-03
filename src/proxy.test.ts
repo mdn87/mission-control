@@ -79,6 +79,72 @@ describe('proxy host matching', () => {
     expect(response.status).toBe(403)
   })
 
+  it('fails closed for Lugos commands on an allowlisted public origin', async () => {
+    vi.resetModules()
+    vi.doMock('node:os', () => ({
+      default: { hostname: () => 'lugos-host' },
+      hostname: () => 'lugos-host',
+    }))
+
+    const { proxy } = await import('./proxy')
+    const request = {
+      headers: new Headers({
+        host: 'knot.newman.foo',
+        'x-forwarded-host': 'knot.newman.foo',
+      }),
+      nextUrl: {
+        host: 'knot.newman.foo',
+        hostname: 'knot.newman.foo',
+        pathname: '/api/lugos/commands',
+        searchParams: new URLSearchParams(),
+        clone: () => ({ pathname: '/api/lugos/commands' }),
+      },
+      method: 'POST',
+      cookies: { get: () => ({ value: 'authenticated-session' }) },
+    } as any
+
+    setNodeEnv('production')
+    process.env.MC_ALLOWED_HOSTS = '10.0.1.33,lugos-host,knot.newman.foo'
+    process.env.MC_LUGOS_PUBLIC_READ_ONLY_HOSTS = 'knot.newman.foo'
+
+    const response = proxy(request)
+    delete process.env.MC_LUGOS_PUBLIC_READ_ONLY_HOSTS
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Lugos commands are disabled on the public origin',
+    })
+  })
+
+  it('keeps authenticated Lugos commands available on the LAN origin', async () => {
+    vi.resetModules()
+    vi.doMock('node:os', () => ({
+      default: { hostname: () => 'lugos-host' },
+      hostname: () => 'lugos-host',
+    }))
+
+    const { proxy } = await import('./proxy')
+    const request = {
+      headers: new Headers({ host: '10.0.1.33:3230' }),
+      nextUrl: {
+        host: '10.0.1.33:3230',
+        hostname: '10.0.1.33',
+        pathname: '/api/lugos/commands',
+        searchParams: new URLSearchParams(),
+        clone: () => ({ pathname: '/api/lugos/commands' }),
+      },
+      method: 'POST',
+      cookies: { get: () => ({ value: 'authenticated-session' }) },
+    } as any
+
+    setNodeEnv('production')
+    process.env.MC_ALLOWED_HOSTS = '10.0.1.33,lugos-host,knot.newman.foo'
+    process.env.MC_LUGOS_PUBLIC_READ_ONLY_HOSTS = 'knot.newman.foo'
+
+    const response = proxy(request)
+    delete process.env.MC_LUGOS_PUBLIC_READ_ONLY_HOSTS
+    expect(response.status).not.toBe(403)
+  })
+
   it('allows unauthenticated health probe for /api/status?action=health', async () => {
     vi.resetModules()
     vi.doMock('node:os', () => ({
