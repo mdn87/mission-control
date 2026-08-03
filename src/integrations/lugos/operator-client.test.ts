@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   OPERATOR_COMMAND_SCHEMA,
   type ApprovalRequestCommand,
+  type MailHandoffCommand,
 } from './operator-contract'
 import {
   fetchOperatorSnapshot,
@@ -17,6 +18,19 @@ const command: ApprovalRequestCommand = {
   payload: {
     subject: 'week-2-adoption',
     summary: 'Prove server-side receipt custody.',
+  },
+}
+
+const handoffCommand: MailHandoffCommand = {
+  schema: OPERATOR_COMMAND_SCHEMA,
+  type: 'mail.handoff',
+  idempotency_key: 'mc-command-mail-0001',
+  payload: {
+    from_agent: '4070pc/mission-control',
+    to_agent: '4070pc/codex',
+    subject: 'Week 4 proof',
+    body: 'Approve one bounded artifact.',
+    artifact: { repo: 'lugos', path: 'week4/task-loop.json' },
   },
 }
 
@@ -57,6 +71,19 @@ describe('Lugos operator server client', () => {
     expect(String(url)).toBe('http://127.0.0.1:3231/operator/v1/commands')
     expect(init.headers.Authorization).toBe('Bearer local-test-token-12345')
     expect(JSON.parse(init.body)).toEqual(command)
+  })
+
+  it('forwards the typed handoff through the same server-only bearer boundary', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json(makeReceipt({ type: 'mail.handoff' }), { status: 202 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(sendOperatorCommand(handoffCommand))
+      .resolves.toEqual(makeReceipt({ type: 'mail.handoff' }))
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.headers.Authorization).toBe('Bearer local-test-token-12345')
+    expect(JSON.parse(init.body)).toEqual(handoffCommand)
   })
 
   it('opens replay from the supplied cursor without attaching the command bearer', async () => {

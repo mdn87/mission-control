@@ -8,6 +8,7 @@ import {
   OPERATOR_COMMAND_SCHEMA,
   operatorReceiptSchema,
   type OperatorReceipt,
+  type TaskLoop,
 } from './operator-contract'
 import {
   addOperatorReceipt,
@@ -58,19 +59,24 @@ export function LugosPanel() {
     streamState,
     error,
     setError,
+    reload,
   } = useLugosOperator()
   const [subject, setSubject] = useState('week-2-adoption')
   const [summary, setSummary] = useState('Review the Mission Control Lugos boundary receipt.')
-  const [submitting, setSubmitting] = useState(false)
+  const [handoffSubject, setHandoffSubject] = useState('Week 4 task loop')
+  const [handoffBody, setHandoffBody] = useState('Approve one bounded task-loop artifact.')
+  const [artifactPath, setArtifactPath] = useState('week4/task-loop.json')
+  const [submitting, setSubmitting] = useState<string | null>(null)
 
   const projection = operatorState.projection
   const canCommand = currentUser?.role === 'operator' || currentUser?.role === 'admin'
   const identities = useMemo(() => projection?.runs ?? [], [projection])
+  const taskLoops = operatorState.taskLoop?.loops ?? []
 
   async function submitApproval(event: React.FormEvent) {
     event.preventDefault()
-    if (!canCommand || submitting) return
-    setSubmitting(true)
+    if (!canCommand || submitting !== null) return
+    setSubmitting('receipt')
     try {
       const receipt = operatorReceiptSchema.parse(await apiFetch<OperatorReceipt>(
         '/api/lugos/commands',
@@ -89,7 +95,66 @@ export function LugosPanel() {
     } catch {
       setError('The approval request was not accepted by Lugos.')
     } finally {
-      setSubmitting(false)
+      setSubmitting(null)
+    }
+  }
+
+  async function submitHandoff(event: React.FormEvent) {
+    event.preventDefault()
+    if (!canCommand || submitting !== null) return
+    setSubmitting('handoff')
+    try {
+      const receipt = operatorReceiptSchema.parse(await apiFetch<OperatorReceipt>(
+        '/api/lugos/commands',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            schema: OPERATOR_COMMAND_SCHEMA,
+            type: 'mail.handoff',
+            idempotency_key: `mc-${crypto.randomUUID()}`,
+            payload: {
+              from_agent: '4070pc/mission-control',
+              to_agent: '4070pc/codex',
+              subject: handoffSubject.trim(),
+              body: handoffBody.trim(),
+              artifact: { repo: 'lugos', path: artifactPath.trim() },
+            },
+          }),
+        },
+      ))
+      setOperatorState(current => addOperatorReceipt(current, receipt))
+      await reload()
+      setError(null)
+    } catch {
+      setError('The Agent Mail handoff was not accepted by Lugos.')
+    } finally {
+      setSubmitting(null)
+    }
+  }
+
+  async function approveTask(loop: TaskLoop) {
+    if (!canCommand || submitting !== null) return
+    setSubmitting(loop.loop_id)
+    try {
+      const receipt = operatorReceiptSchema.parse(await apiFetch<OperatorReceipt>(
+        '/api/lugos/commands',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            schema: OPERATOR_COMMAND_SCHEMA,
+            type: 'task.approve',
+            idempotency_key: `mc-${crypto.randomUUID()}`,
+            payload: { loop_id: loop.loop_id, decision: 'approved' },
+          }),
+        },
+      ))
+      setOperatorState(current => addOperatorReceipt(current, receipt))
+      await reload()
+      setError(null)
+    } catch {
+      setError('Lugos did not accept the task approval or create its artifact.')
+    } finally {
+      setSubmitting(null)
     }
   }
 
@@ -181,6 +246,122 @@ export function LugosPanel() {
             </div>
           </section>
 
+          <section className="rounded-lg border border-border bg-card p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Week 4 task loop</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Agent Mail owns the handoff; Lugos owns approval, artifact, receipts, and replay.
+                </p>
+              </div>
+              <Badge value={operatorState.taskLoop?.source.state ?? 'unknown'} />
+            </div>
+
+            {canCommand ? (
+              <form className="mt-4 grid gap-3 lg:grid-cols-2" onSubmit={submitHandoff}>
+                <label className="block text-xs text-muted-foreground">
+                  Handoff subject
+                  <input
+                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    maxLength={128}
+                    required
+                    value={handoffSubject}
+                    onChange={event => setHandoffSubject(event.target.value)}
+                  />
+                </label>
+                <label className="block text-xs text-muted-foreground">
+                  Artifact path
+                  <input
+                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground"
+                    maxLength={256}
+                    pattern="[A-Za-z0-9][A-Za-z0-9._/-]*\.json"
+                    required
+                    value={artifactPath}
+                    onChange={event => setArtifactPath(event.target.value)}
+                  />
+                </label>
+                <label className="block text-xs text-muted-foreground lg:col-span-2">
+                  Handoff body
+                  <textarea
+                    className="mt-1 min-h-20 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    maxLength={2000}
+                    required
+                    value={handoffBody}
+                    onChange={event => setHandoffBody(event.target.value)}
+                  />
+                </label>
+                <div className="flex items-center justify-between gap-3 lg:col-span-2">
+                  <div className="text-xs text-muted-foreground">
+                    4070pc/mission-control → 4070pc/codex · repo lugos
+                  </div>
+                  <Button type="submit" size="sm" disabled={submitting !== null}>
+                    {submitting === 'handoff' ? 'Sending…' : 'Send handoff'}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="mt-4 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">
+                Viewer session: the replayed loop is visible; handoff and approval require an operator.
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-3">
+              {taskLoops.map(loop => (
+                <div key={loop.loop_id} className="rounded-lg border border-border bg-background p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="font-mono text-xs text-foreground">{loop.loop_id}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {loop.handoff.subject} · {loop.handoff.from_agent} → {loop.handoff.to_agent}
+                      </div>
+                    </div>
+                    <Badge value={loop.state} />
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-5">
+                    {[
+                      ['1 · Handoff', `mail #${loop.handoff.message_id}`, true],
+                      ['2 · Approval', loop.approval?.decision ?? 'waiting', loop.approval !== null],
+                      ['3 · Artifact', loop.artifact?.path ?? 'waiting', loop.artifact !== null],
+                      ['4 · Receipt', `${loop.receipt_ids.length} durable`, loop.receipt_ids.length > 0],
+                      ['5 · Replay', operatorState.cursor ?? 'waiting', operatorState.cursor !== null],
+                    ].map(([label, detail, complete]) => (
+                      <div
+                        key={String(label)}
+                        className={`rounded border px-2 py-2 text-xs ${
+                          complete
+                            ? 'border-emerald-500/20 bg-emerald-500/5'
+                            : 'border-border bg-card'
+                        }`}
+                      >
+                        <div className="font-medium text-foreground">{label}</div>
+                        <div className="mt-1 truncate text-muted-foreground">{detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {loop.state === 'awaiting_approval' && canCommand && (
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={submitting !== null}
+                        onClick={() => void approveTask(loop)}
+                      >
+                        {submitting === loop.loop_id
+                          ? 'Creating artifact…'
+                          : 'Approve and create artifact'}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {taskLoops.length === 0 && (
+                <div className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+                  Send the first handoff to start the replayable loop.
+                </div>
+              )}
+            </div>
+          </section>
+
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="rounded-lg border border-border bg-card p-4">
               <h3 className="text-sm font-semibold text-foreground">Request approval receipt</h3>
@@ -209,8 +390,8 @@ export function LugosPanel() {
                       onChange={event => setSummary(event.target.value)}
                     />
                   </label>
-                  <Button type="submit" size="sm" disabled={submitting}>
-                    {submitting ? 'Requesting…' : 'Request receipt'}
+                  <Button type="submit" size="sm" disabled={submitting !== null}>
+                    {submitting === 'receipt' ? 'Requesting…' : 'Request receipt'}
                   </Button>
                 </form>
               ) : (

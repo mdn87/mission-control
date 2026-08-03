@@ -42,6 +42,25 @@ receipt signals already present in the operator contract. This slice adds no
 new telemetry service or projection. The separate `/lugos` panel remains the
 command and durable-receipt surface.
 
+## Week-4 task loop
+
+The `/lugos` panel now drives one bounded source-linked loop:
+
+1. `mail.handoff` sends a normal Agent Mail message and records its source
+   message/thread identity.
+2. `task.approve` accepts only an existing handoff and invokes the injected
+   repository artifact adapter.
+3. Lugos emits a receipt for each accepted command and reconstructs the
+   `lugos-task-loop/v1` projection from those private receipt records.
+4. Mission Control renders handoff, approval, artifact, receipt, and replay
+   state from that projection. It creates no Mission Control task or optimistic
+   copy.
+
+The command schemas are closed: there is no arbitrary mail, filesystem, shell,
+or git passthrough. The proof artifact is JSON-only beneath the adapter's
+configured root. Agent Mail, the repo adapter, and Lugos receipts remain the
+authorities.
+
 ## Local vertical slice
 
 Start the replayable Lugos fake from the superproject:
@@ -51,6 +70,11 @@ cd ../lugos-hud
 $env:LUGOS_OPERATOR_API_TOKEN='replace-with-at-least-16-characters'
 npm run operator-api:fake
 ```
+
+The default uses a deterministic fake Agent Mail sender. For an intentional
+local live-mail proof, set `LUGOS_OPERATOR_AGENT_MAIL_MODE=live`, trust the
+Lugos Agent Mail CA through `NODE_EXTRA_CA_CERTS`, and keep
+`LUGOS_OPERATOR_ARTIFACT_ROOT` beneath an ignored local data directory.
 
 In another PowerShell window:
 
