@@ -19,6 +19,8 @@
     "lint": "pnpm run verify:node && eslint .",
     "typecheck": "pnpm run verify:node && tsc --noEmit",
     "test": "pnpm run verify:node && vitest run",
+    "test:lugos": "pnpm run verify:node && vitest run src/integrations/lugos",
+    "lugos:compat": "node scripts/check-lugos-upstream-seams.mjs",
     "test:security-audit": "bash scripts/security-audit.test.sh",
     "test:security-shell": "bash scripts/security-audit.test.sh && bash scripts/load-env.test.sh",
     "test:watch": "vitest",

@@ -22,6 +22,10 @@ It works with OpenClaw, Claude Code, Codex, and other runtimes - it is not part 
 > Mission Control is alpha software. APIs, schemas, and configuration may change between
 > releases. Read the [security guidance](#security-boundary) before exposing it to a network.
 
+This fork carries the Lugos week-2 adoption slice. See
+[`docs/lugos-operator-integration.md`](docs/lugos-operator-integration.md) for
+the authority boundary, local preview, and verification commands.
+
 ## Start locally
 
 Node.js 22 or newer and pnpm are required for a source install.

@@ -60,6 +60,7 @@ import { clearOnboardingDismissedThisSession, clearOnboardingReplayFromStart, ge
 import { Button } from '@/components/ui/button'
 import { useMissionControl, type CurrentUser } from '@/store'
 import { apiFetch, ApiError } from '@/lib/api-client'
+import '@/integrations/lugos/register'
 
 interface GatewaySummary {
   id: number
