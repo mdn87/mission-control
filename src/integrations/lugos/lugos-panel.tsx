@@ -1,23 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { useMissionControl } from '@/store'
 import {
   OPERATOR_COMMAND_SCHEMA,
-  operatorEventSchema,
   operatorReceiptSchema,
   type OperatorReceipt,
-  type OperatorSnapshot,
 } from './operator-contract'
 import {
-  EMPTY_LUGOS_OPERATOR_STATE,
   addOperatorReceipt,
-  applyOperatorEvent,
-  stateFromSnapshot,
-  type LugosOperatorState,
 } from './operator-state'
+import { useLugosOperator } from './use-lugos-operator'
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return '—'
@@ -56,63 +51,17 @@ function Metric({ label, value }: { label: string; value: number | string }) {
 
 export function LugosPanel() {
   const currentUser = useMissionControl(state => state.currentUser)
-  const [operatorState, setOperatorState] = useState<LugosOperatorState>(
-    EMPTY_LUGOS_OPERATOR_STATE,
-  )
-  const [loading, setLoading] = useState(true)
-  const [streamState, setStreamState] = useState<'connecting' | 'live' | 'degraded'>('connecting')
-  const [error, setError] = useState<string | null>(null)
+  const {
+    operatorState,
+    setOperatorState,
+    loading,
+    streamState,
+    error,
+    setError,
+  } = useLugosOperator()
   const [subject, setSubject] = useState('week-2-adoption')
   const [summary, setSummary] = useState('Review the Mission Control Lugos boundary receipt.')
   const [submitting, setSubmitting] = useState(false)
-  const streamCursor = useRef<string | null>(null)
-
-  const loadSnapshot = useCallback(async () => {
-    try {
-      const snapshot = await apiFetch<OperatorSnapshot>('/api/lugos/snapshot')
-      const next = stateFromSnapshot(snapshot)
-      streamCursor.current = next.cursor
-      setOperatorState(next)
-      setError(null)
-    } catch {
-      setError('Lugos operator snapshot is unavailable.')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void loadSnapshot()
-  }, [loadSnapshot])
-
-  useEffect(() => {
-    if (loading) return
-    const after = streamCursor.current ? `?after=${encodeURIComponent(streamCursor.current)}` : ''
-    const source = new EventSource(`/api/lugos/events${after}`)
-    const onOperatorEvent = (message: MessageEvent<string>) => {
-      try {
-        const event = operatorEventSchema.parse(JSON.parse(message.data))
-        streamCursor.current = event.cursor
-        setOperatorState(current => applyOperatorEvent(current, event))
-        setStreamState('live')
-        setError(null)
-      } catch {
-        setStreamState('degraded')
-        setError('The Lugos event stream returned an incompatible contract.')
-      }
-    }
-    const onReset = () => {
-      source.close()
-      setStreamState('connecting')
-      setLoading(true)
-      void loadSnapshot()
-    }
-    source.addEventListener('operator', onOperatorEvent as EventListener)
-    source.addEventListener('reset', onReset)
-    source.onopen = () => setStreamState('live')
-    source.onerror = () => setStreamState('degraded')
-    return () => source.close()
-  }, [loading, loadSnapshot])
 
   const projection = operatorState.projection
   const canCommand = currentUser?.role === 'operator' || currentUser?.role === 'admin'
