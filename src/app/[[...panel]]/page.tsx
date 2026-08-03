@@ -13,7 +13,6 @@ import { CostTrackerPanel } from '@/components/panels/cost-tracker-panel'
 import { TaskBoardPanel } from '@/components/panels/task-board-panel'
 import { ActivityFeedPanel } from '@/components/panels/activity-feed-panel'
 import { AgentSquadPanelPhase3 } from '@/components/panels/agent-squad-panel-phase3'
-import { AgentCommsPanel } from '@/components/panels/agent-comms-panel'
 import { StandupPanel } from '@/components/panels/standup-panel'
 import { OrchestrationBar } from '@/components/panels/orchestration-bar'
 import { NotificationsPanel } from '@/components/panels/notifications-panel'
@@ -39,6 +38,7 @@ import { ExecApprovalPanel } from '@/components/panels/exec-approval-panel'
 import { SystemMonitorPanel } from '@/components/panels/system-monitor-panel'
 import { ChatPagePanel } from '@/components/panels/chat-page-panel'
 import { ChatPanel } from '@/components/chat/chat-panel'
+import { LugosSpatialOverview } from '@/integrations/lugos/lugos-spatial-overview'
 import { STORAGE_GATEWAY_URL } from '@/lib/device-identity'
 import { getPluginPanel } from '@/lib/plugins'
 import { shouldRedirectDashboardToHttps } from '@/lib/browser-security'
@@ -560,16 +560,7 @@ function ContentRouter({ tab }: { tab: string }) {
 
   switch (tab) {
     case 'overview':
-      return (
-        <>
-          <Dashboard />
-          {!isLocal && (
-            <div className="mt-4 mx-4 mb-4 rounded-lg border border-border bg-card overflow-hidden">
-              <AgentCommsPanel />
-            </div>
-          )}
-        </>
-      )
+      return <LugosSpatialOverview />
     case 'tasks':
       return <TaskBoardPanel />
     case 'agents':
