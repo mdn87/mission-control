@@ -169,7 +169,7 @@ export function proxy(request: NextRequest) {
 
   const enforceAllowlist = !allowAnyHost && allowedPatterns.length > 0
   const isAllowedHost = !enforceAllowlist
-    || requestHosts.some((hostName) =>
+    || requestHosts.length > 0 && requestHosts.every((hostName) =>
       implicitAllowedHosts.some((candidate) => hostMatches(candidate, hostName))
       || allowedPatterns.some((pattern) => hostMatches(pattern, hostName))
     )

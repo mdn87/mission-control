@@ -51,6 +51,34 @@ describe('proxy host matching', () => {
     expect(response.status).toBe(403)
   })
 
+  it('rejects an untrusted Host header even when Next reports an allowed socket host', async () => {
+    vi.resetModules()
+    vi.doMock('node:os', () => ({
+      default: { hostname: () => 'lugos-host' },
+      hostname: () => 'lugos-host',
+    }))
+
+    const { proxy } = await import('./proxy')
+    const request = {
+      headers: new Headers({ host: 'evil.example.com:3230' }),
+      nextUrl: {
+        host: '10.0.1.33:3230',
+        hostname: '10.0.1.33',
+        pathname: '/login',
+        clone: () => ({ pathname: '/login' }),
+      },
+      method: 'GET',
+      cookies: { get: () => undefined },
+    } as any
+
+    setNodeEnv('production')
+    process.env.MC_ALLOWED_HOSTS = '10.0.1.33,lugos-host'
+    delete process.env.MC_ALLOW_ANY_HOST
+
+    const response = proxy(request)
+    expect(response.status).toBe(403)
+  })
+
   it('allows unauthenticated health probe for /api/status?action=health', async () => {
     vi.resetModules()
     vi.doMock('node:os', () => ({
