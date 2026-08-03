@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
-import { approvalRequestCommandSchema } from '@/integrations/lugos/operator-contract'
+import { operatorCommandSchema } from '@/integrations/lugos/operator-contract'
 import { sendOperatorCommand } from '@/integrations/lugos/operator-client'
 
 export async function POST(request: Request) {
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid command' }, { status: 400 })
   }
-  const command = approvalRequestCommandSchema.safeParse(input)
+  const command = operatorCommandSchema.safeParse(input)
   if (!command.success) {
     return NextResponse.json({ error: 'Invalid command' }, { status: 400 })
   }

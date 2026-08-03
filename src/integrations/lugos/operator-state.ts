@@ -6,17 +6,21 @@ import {
   type OperatorEvent,
   type OperatorReceipt,
   type OperatorSnapshot,
+  type TaskLoopDelta,
+  type TaskLoopProjection,
 } from './operator-contract'
 
 export interface LugosOperatorState {
   cursor: string | null
   projection: AutoworkProjection | null
+  taskLoop: TaskLoopProjection | null
   receipts: OperatorReceipt[]
 }
 
 export const EMPTY_LUGOS_OPERATOR_STATE: LugosOperatorState = {
   cursor: null,
   projection: null,
+  taskLoop: null,
   receipts: [],
 }
 
@@ -24,6 +28,12 @@ function asSnapshot(
   value: AutoworkProjection | AutoworkDelta,
 ): AutoworkProjection {
   return { ...value, schema: 'lugos-hud-autowork/v1' }
+}
+
+function asTaskLoopSnapshot(
+  value: TaskLoopProjection | TaskLoopDelta,
+): TaskLoopProjection {
+  return { ...value, schema: 'lugos-task-loop/v1' }
 }
 
 function mergeReceipts(
@@ -42,6 +52,7 @@ export function stateFromSnapshot(input: unknown): LugosOperatorState {
   return {
     cursor: snapshot.cursor,
     projection: snapshot.projections.find(item => item.name === 'autowork')?.value ?? null,
+    taskLoop: snapshot.projections.find(item => item.name === 'task-loop')?.value ?? null,
     receipts: mergeReceipts([], snapshot.receipts),
   }
 }
@@ -56,6 +67,13 @@ export function applyOperatorEvent(
       ...state,
       cursor: event.cursor,
       receipts: mergeReceipts(state.receipts, [event.receipt]),
+    }
+  }
+  if (event.projection === 'task-loop') {
+    return {
+      ...state,
+      cursor: event.cursor,
+      taskLoop: asTaskLoopSnapshot(event.value),
     }
   }
   if (event.type === 'projection.snapshot' || state.projection === null) {

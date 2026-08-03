@@ -8,6 +8,7 @@ import {
   type AutoworkProjection,
   type OperatorReceipt,
   type OperatorSnapshot,
+  type TaskLoopProjection,
 } from '../operator-contract'
 
 const phases = {
@@ -137,6 +138,52 @@ export function makeSnapshot(
     cursor: 'event-0002',
     projections: [{ name: 'autowork', value: makeProjection() }],
     receipts: [],
+    ...overrides,
+  }
+}
+
+export function makeTaskLoopProjection(
+  overrides: Partial<TaskLoopProjection> = {},
+): TaskLoopProjection {
+  return {
+    schema: 'lugos-task-loop/v1',
+    generatedAt: '2026-08-02T22:00:00.000Z',
+    cursor: 'receipt-loop-2',
+    source: {
+      mail: 'agent-mail',
+      artifacts: 'repo-adapter',
+      state: 'ready',
+      diagnostics: [],
+    },
+    summary: {
+      awaiting_approval: 0,
+      artifact_ready: 1,
+    },
+    loops: [{
+      loop_id: 'mail:41',
+      state: 'artifact_ready',
+      handoff: {
+        message_id: 41,
+        thread_id: 'a'.repeat(32),
+        from_agent: '4070pc/mission-control',
+        to_agent: '4070pc/codex',
+        subject: 'Week 4 proof',
+        sent_at: '2026-08-02T22:00:00.000Z',
+      },
+      approval: {
+        decision: 'approved',
+        receipt_id: 'receipt-loop-2',
+        accepted_at: '2026-08-02T22:00:01.000Z',
+      },
+      artifact: {
+        repo: 'lugos',
+        path: 'week4/task-loop.json',
+        revision: 'proof-123456789abc',
+        digest: 'b'.repeat(64),
+        created_at: '2026-08-02T22:00:01.000Z',
+      },
+      receipt_ids: ['receipt-loop-1', 'receipt-loop-2'],
+    }],
     ...overrides,
   }
 }

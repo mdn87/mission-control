@@ -1,8 +1,8 @@
 import {
-  approvalRequestCommandSchema,
+  operatorCommandSchema,
   operatorReceiptSchema,
   operatorSnapshotSchema,
-  type ApprovalRequestCommand,
+  type OperatorCommand,
   type OperatorReceipt,
   type OperatorSnapshot,
 } from './operator-contract'
@@ -86,9 +86,9 @@ export async function openOperatorEventStream(
 }
 
 export async function sendOperatorCommand(
-  input: ApprovalRequestCommand,
+  input: OperatorCommand,
 ): Promise<OperatorReceipt> {
-  const command = approvalRequestCommandSchema.parse(input)
+  const command = operatorCommandSchema.parse(input)
   const response = await fetch(operatorUrl('/operator/v1/commands'), {
     method: 'POST',
     headers: {

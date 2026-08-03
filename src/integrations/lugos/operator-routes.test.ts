@@ -67,6 +67,47 @@ describe('Mission Control Lugos route boundary', () => {
     expect(sendOperatorCommandMock).toHaveBeenCalledWith(command)
   })
 
+  it('forwards a validated Agent Mail handoff without widening its artifact contract', async () => {
+    const command = {
+      schema: 'lugos-operator-command/v1',
+      type: 'mail.handoff',
+      idempotency_key: 'mc-command-mail-0001',
+      payload: {
+        from_agent: '4070pc/mission-control',
+        to_agent: '4070pc/codex',
+        subject: 'Week 4 proof',
+        body: 'Approve one bounded artifact.',
+        artifact: { repo: 'lugos', path: 'week4/task-loop.json' },
+      },
+    }
+    const response = await postCommand(new Request('http://localhost/api/lugos/commands', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(command),
+    }))
+    expect(response.status).toBe(202)
+    expect(sendOperatorCommandMock).toHaveBeenCalledWith(command)
+  })
+
+  it('rejects command passthrough fields before contacting Lugos', async () => {
+    const response = await postCommand(new Request('http://localhost/api/lugos/commands', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        schema: 'lugos-operator-command/v1',
+        type: 'task.approve',
+        idempotency_key: 'mc-command-approve-0001',
+        payload: {
+          loop_id: 'mail:41',
+          decision: 'approved',
+          shell: 'arbitrary passthrough',
+        },
+      }),
+    }))
+    expect(response.status).toBe(400)
+    expect(sendOperatorCommandMock).not.toHaveBeenCalled()
+  })
+
   it('role-gates replay and passes only a validated cursor upstream', async () => {
     const response = await getEvents(new Request(
       'http://localhost/api/lugos/events?after=event-0002',
