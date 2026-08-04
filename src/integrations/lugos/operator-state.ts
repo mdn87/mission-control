@@ -9,11 +9,19 @@ import {
   type TaskLoopDelta,
   type TaskLoopProjection,
 } from './operator-contract'
+import type {
+  BranReadinessProjection,
+  DiagnosticsProjection,
+  FleetProjection,
+} from './cockpit-contract'
 
 export interface LugosOperatorState {
   cursor: string | null
   projection: AutoworkProjection | null
   taskLoop: TaskLoopProjection | null
+  fleet: FleetProjection | null
+  diagnostics: DiagnosticsProjection | null
+  branReadiness: BranReadinessProjection | null
   receipts: OperatorReceipt[]
 }
 
@@ -21,6 +29,9 @@ export const EMPTY_LUGOS_OPERATOR_STATE: LugosOperatorState = {
   cursor: null,
   projection: null,
   taskLoop: null,
+  fleet: null,
+  diagnostics: null,
+  branReadiness: null,
   receipts: [],
 }
 
@@ -53,6 +64,9 @@ export function stateFromSnapshot(input: unknown): LugosOperatorState {
     cursor: snapshot.cursor,
     projection: snapshot.projections.find(item => item.name === 'autowork')?.value ?? null,
     taskLoop: snapshot.projections.find(item => item.name === 'task-loop')?.value ?? null,
+    fleet: snapshot.projections.find(item => item.name === 'fleet')?.value ?? null,
+    diagnostics: snapshot.projections.find(item => item.name === 'cockpit-diagnostics')?.value ?? null,
+    branReadiness: snapshot.projections.find(item => item.name === 'bran-readiness')?.value ?? null,
     receipts: mergeReceipts([], snapshot.receipts),
   }
 }

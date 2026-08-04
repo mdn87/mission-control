@@ -14,6 +14,7 @@ import {
 } from './operator-state'
 
 export type LugosStreamState = 'connecting' | 'live' | 'degraded'
+const SNAPSHOT_POLL_MS = 30_000
 
 export function useLugosOperator() {
   const [operatorState, setOperatorState] = useState<LugosOperatorState>(
@@ -40,6 +41,13 @@ export function useLugosOperator() {
 
   useEffect(() => {
     void loadSnapshot()
+  }, [loadSnapshot])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadSnapshot()
+    }, SNAPSHOT_POLL_MS)
+    return () => window.clearInterval(timer)
   }, [loadSnapshot])
 
   useEffect(() => {

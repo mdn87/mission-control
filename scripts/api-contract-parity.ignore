@@ -15,3 +15,7 @@ GET /api/gateways/control
 POST /api/gateways/control
 GET /api/mcp-audit/verify
 POST /api/hermes/events
+# Lugos cockpit specialist links are a closed, viewer-gated local integration
+# contract. Add this route with the existing /api/lugos family when that
+# integration is incorporated into the upstream OpenAPI document.
+GET /api/lugos/destinations
