@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import {
+  branReadinessProjectionSchema,
+  diagnosticsProjectionSchema,
+  fleetProjectionSchema,
+} from './cockpit-contract'
 
 export const OPERATOR_SNAPSHOT_SCHEMA = 'lugos-operator-snapshot/v1'
 export const OPERATOR_EVENT_SCHEMA = 'lugos-operator-event/v1'
@@ -211,7 +216,19 @@ export const operatorSnapshotSchema = z.object({
       name: z.literal('task-loop'),
       value: taskLoopSnapshotSchema,
     }).strict(),
-  ])).max(2),
+    z.object({
+      name: z.literal('fleet'),
+      value: fleetProjectionSchema,
+    }).strict(),
+    z.object({
+      name: z.literal('cockpit-diagnostics'),
+      value: diagnosticsProjectionSchema,
+    }).strict(),
+    z.object({
+      name: z.literal('bran-readiness'),
+      value: branReadinessProjectionSchema,
+    }).strict(),
+  ])).max(5),
   receipts: z.array(operatorReceiptSchema).max(1024),
 }).strict()
 

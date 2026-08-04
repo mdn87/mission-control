@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeReceipt, makeSnapshot } from './__tests__/fixtures'
+import {
+  makeBranReadinessProjection,
+  makeDiagnosticsProjection,
+  makeFleetProjection,
+} from './__tests__/cockpit-fixtures'
 
 const {
   requireRoleMock,
@@ -38,6 +43,35 @@ describe('Mission Control Lugos route boundary', () => {
     expect(response.status).toBe(200)
     expect(requireRoleMock).toHaveBeenCalledWith(expect.any(Request), 'viewer')
     expect(fetchOperatorSnapshotMock).toHaveBeenCalledOnce()
+  })
+
+  it('applies the cockpit flag at request time without changing legacy projections', async () => {
+    const previous = process.env.MC_LUGOS_COCKPIT
+    const snapshot = makeSnapshot({
+      projections: [
+        ...makeSnapshot().projections,
+        { name: 'fleet', value: makeFleetProjection() },
+        { name: 'cockpit-diagnostics', value: makeDiagnosticsProjection() },
+        { name: 'bran-readiness', value: makeBranReadinessProjection() },
+      ],
+    })
+    fetchOperatorSnapshotMock.mockResolvedValue(snapshot)
+    try {
+      process.env.MC_LUGOS_COCKPIT = '0'
+      const disabled = await getSnapshot(new Request('http://localhost/api/lugos/snapshot'))
+      expect((await disabled.json()).projections.map(
+        (item: { name: string }) => item.name,
+      )).toEqual(['autowork'])
+
+      process.env.MC_LUGOS_COCKPIT = '1'
+      const enabled = await getSnapshot(new Request('http://localhost/api/lugos/snapshot'))
+      expect((await enabled.json()).projections.map(
+        (item: { name: string }) => item.name,
+      )).toEqual(['autowork', 'fleet', 'cockpit-diagnostics', 'bran-readiness'])
+    } finally {
+      if (previous === undefined) delete process.env.MC_LUGOS_COCKPIT
+      else process.env.MC_LUGOS_COCKPIT = previous
+    }
   })
 
   it('confines commands to a Mission Control operator session', async () => {

@@ -8,6 +8,12 @@ import {
   type SpatialStatus,
 } from './spatial-layout'
 import { useLugosOperator } from './use-lugos-operator'
+import {
+  CockpitDrillIn,
+  CockpitExceptionDeck,
+  CockpitTrustRail,
+  type CockpitDetail,
+} from './cockpit-overview'
 
 const STATUS_TONE: Record<SpatialStatus, string> = {
   active: 'border-cyan-400/70 bg-cyan-400/10 text-cyan-200 shadow-[0_0_22px_rgba(34,211,238,0.12)]',
@@ -201,6 +207,7 @@ export function LugosSpatialOverview() {
     error,
   } = useLugosOperator()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [cockpitDetail, setCockpitDetail] = useState<CockpitDetail | null>(null)
   const projection = operatorState.projection
   const layout = useMemo(
     () => projection ? buildSpatialLayout(projection) : null,
@@ -212,6 +219,22 @@ export function LugosSpatialOverview() {
   const selected = layout?.entities.find(entity => entity.id === selectedId) ?? defaultEntity
   const positions = new Map(layout?.entities.map(entity => [entity.id, entity]) ?? [])
   const analytics = projection?.analytics
+  const cockpit = operatorState.fleet && operatorState.diagnostics && operatorState.branReadiness
+    ? {
+        fleet: operatorState.fleet,
+        diagnostics: operatorState.diagnostics,
+        branReadiness: operatorState.branReadiness,
+      }
+    : null
+  const openCockpitDetail = (detail: CockpitDetail) => {
+    setCockpitDetail(detail)
+    window.requestAnimationFrame(() => {
+      document.getElementById('lugos-cockpit-details')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    })
+  }
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.07),transparent_32%)] p-3 sm:p-4">
@@ -248,6 +271,12 @@ export function LugosSpatialOverview() {
         </div>
       ) : (
         <div className="space-y-4">
+          {cockpit && (
+            <CockpitTrustRail
+              {...cockpit}
+              onOpen={openCockpitDetail}
+            />
+          )}
           <div className="grid gap-4 xl:grid-cols-[14rem_minmax(36rem,1fr)_16rem]">
             <aside className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <AituCard
@@ -383,6 +412,20 @@ export function LugosSpatialOverview() {
             </aside>
           </div>
 
+          {cockpit && (
+            <CockpitExceptionDeck
+              {...cockpit}
+              onOpen={openCockpitDetail}
+            />
+          )}
+          {cockpit && cockpitDetail && (
+            <CockpitDrillIn
+              {...cockpit}
+              detail={cockpitDetail}
+              onSelect={setCockpitDetail}
+              onClose={() => setCockpitDetail(null)}
+            />
+          )}
           {selected && <DenseDetail entity={selected} runs={projection.runs} />}
         </div>
       )}
