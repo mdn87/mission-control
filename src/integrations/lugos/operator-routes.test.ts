@@ -26,6 +26,7 @@ vi.mock('@/integrations/lugos/operator-client', () => ({
 }))
 
 import { GET as getSnapshot } from '@/app/api/lugos/snapshot/route'
+import { GET as getDestinations } from '@/app/api/lugos/destinations/route'
 import { GET as getEvents } from '@/app/api/lugos/events/route'
 import { POST as postCommand } from '@/app/api/lugos/commands/route'
 
@@ -83,6 +84,26 @@ describe('Mission Control Lugos route boundary', () => {
     expect(response.status).toBe(403)
     expect(requireRoleMock).toHaveBeenCalledWith(expect.any(Request), 'operator')
     expect(sendOperatorCommandMock).not.toHaveBeenCalled()
+  })
+
+  it('viewer-gates specialist destinations and serves only runtime-approved public links', async () => {
+    const previousFlag = process.env.MC_LUGOS_COCKPIT
+    const previousFiles = process.env.MC_LUGOS_FILES_PUBLIC_URL
+    try {
+      process.env.MC_LUGOS_COCKPIT = '1'
+      process.env.MC_LUGOS_FILES_PUBLIC_URL = 'https://files.newman.foo'
+      const response = await getDestinations(new Request('http://localhost/api/lugos/destinations'))
+      expect(response.status).toBe(200)
+      expect(requireRoleMock).toHaveBeenCalledWith(expect.any(Request), 'viewer')
+      const body = await response.json()
+      expect(body.destinations.find((item: { id: string }) => item.id === 'files').href)
+        .toBe('https://files.newman.foo/')
+    } finally {
+      if (previousFlag === undefined) delete process.env.MC_LUGOS_COCKPIT
+      else process.env.MC_LUGOS_COCKPIT = previousFlag
+      if (previousFiles === undefined) delete process.env.MC_LUGOS_FILES_PUBLIC_URL
+      else process.env.MC_LUGOS_FILES_PUBLIC_URL = previousFiles
+    }
   })
 
   it('forwards only a validated approval request to the Lugos client', async () => {

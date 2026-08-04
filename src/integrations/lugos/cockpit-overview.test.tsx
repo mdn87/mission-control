@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CockpitDrillIn,
   CockpitExceptionDeck,
@@ -13,6 +13,9 @@ import {
 } from './__tests__/cockpit-fixtures'
 
 describe('Mission Control cockpit overview', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
   it('renders unknown projection evidence as unknown and opens bounded details', () => {
     const onOpen = vi.fn()
     render(
@@ -105,7 +108,18 @@ describe('Mission Control cockpit overview', () => {
     expect(screen.getByText('operator-handbook@2')).toBeInTheDocument()
   })
 
-  it('keeps specialist applications external on Diagnostics', () => {
+  it('keeps specialist applications external and uses server-approved links', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      schema: 'lugos-cockpit-destinations/v1',
+      destinations: [
+        { id: 'memory', label: 'Memory', description: 'Sulis and Atlas remain authoritative.', href: null },
+        { id: 'traces', label: 'Traces', description: 'Use Jaeger for spans and waterfalls.', href: null },
+        { id: 'files', label: 'File operations', description: 'Use Codelink for shares and transfers.', href: 'https://files.newman.foo/' },
+        { id: 'vision', label: 'Vision', description: 'Use Remotedesk for screen and vision operations.', href: null },
+        { id: 'media', label: 'Media', description: 'Use the media generation tools.', href: null },
+        { id: 'workflows', label: 'Workflows', description: 'Use the composed workflow tooling.', href: null },
+      ],
+    }), { status: 200 })))
     render(
       <CockpitDrillIn
         fleet={makeFleetProjection()}
@@ -117,7 +131,10 @@ describe('Mission Control cockpit overview', () => {
       />,
     )
     expect(screen.getByText('Specialist custody')).toBeInTheDocument()
-    expect(screen.getByText(/Use Jaeger for spans and waterfalls/)).toBeInTheDocument()
-    expect(screen.getByText(/Use Codelink for shares and transfers/)).toBeInTheDocument()
+    expect(await screen.findByText(/Use Jaeger for spans and waterfalls/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open specialist' })).toHaveAttribute(
+      'href',
+      'https://files.newman.foo/',
+    )
   })
 })

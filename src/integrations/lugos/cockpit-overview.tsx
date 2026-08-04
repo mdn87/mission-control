@@ -8,6 +8,8 @@ import type {
   DiagnosticsProjection,
   FleetProjection,
 } from './cockpit-contract'
+import type { CockpitDestination } from './cockpit-destinations'
+import { useCockpitDestinations } from './use-cockpit-destinations'
 
 export type CockpitDetail = 'fleet' | 'diagnostics' | 'bran'
 
@@ -546,7 +548,13 @@ function FleetDetail({ fleet }: { fleet: FleetProjection }) {
   )
 }
 
-function DiagnosticsDetail({ diagnostics }: { diagnostics: DiagnosticsProjection }) {
+function DiagnosticsDetail({
+  diagnostics,
+  destinations,
+}: {
+  diagnostics: DiagnosticsProjection
+  destinations: CockpitDestination[]
+}) {
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
@@ -677,19 +685,34 @@ function DiagnosticsDetail({ diagnostics }: { diagnostics: DiagnosticsProjection
       <section className="rounded-lg border border-border bg-background/50 p-3">
         <h3 className="text-xs font-semibold text-foreground">Specialist custody</h3>
         <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-3">
-          {[
-            ['Memory', 'Sulis and Atlas remain authoritative.'],
-            ['Traces', 'Use Jaeger for spans and waterfalls.'],
-            ['File operations', 'Use Codelink for shares and transfers.'],
-            ['Vision', 'Use Remotedesk for screen and vision operations.'],
-            ['Media', 'Use the media generation tools.'],
-            ['Workflows', 'Use the composed workflow tooling.'],
-          ].map(([label, detail]) => (
-            <div key={label} className="rounded border border-border px-3 py-2">
-              <div className="font-semibold text-foreground">{label}</div>
-              <div className="mt-0.5 text-muted-foreground">{detail}</div>
+          {destinations.map(destination => (
+            <div key={destination.id} className="rounded border border-border px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-foreground">{destination.label}</div>
+                {destination.href && (
+                  <a
+                    href={destination.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] font-medium text-cyan-300 hover:text-cyan-200"
+                  >
+                    Open specialist
+                  </a>
+                )}
+              </div>
+              <div className="mt-0.5 text-muted-foreground">{destination.description}</div>
+              {!destination.href && (
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  No approved public route configured.
+                </div>
+              )}
             </div>
           ))}
+          {destinations.length === 0 && (
+            <div className="rounded border border-dashed border-border px-3 py-5 text-center text-muted-foreground sm:col-span-2 xl:col-span-3">
+              Specialist destinations are unavailable. Use the authoritative CLI or application directly.
+            </div>
+          )}
         </div>
       </section>
     </div>
@@ -750,6 +773,7 @@ export function CockpitDrillIn({
   onSelect: (detail: CockpitDetail) => void
   onClose: () => void
 }) {
+  const destinations = useCockpitDestinations()
   return (
     <section
       id="lugos-cockpit-details"
@@ -794,7 +818,12 @@ export function CockpitDrillIn({
       </div>
       <div className="p-3 sm:p-4">
         {detail === 'fleet' && <FleetDetail fleet={fleet} />}
-        {detail === 'diagnostics' && <DiagnosticsDetail diagnostics={diagnostics} />}
+        {detail === 'diagnostics' && (
+          <DiagnosticsDetail
+            diagnostics={diagnostics}
+            destinations={destinations}
+          />
+        )}
         {detail === 'bran' && <BranDetail branReadiness={branReadiness} />}
       </div>
     </section>
