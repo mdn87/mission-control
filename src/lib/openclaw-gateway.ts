@@ -98,12 +98,14 @@ export async function callOpenClawGateway<T = unknown>(
     let settled = false
     let connected = false
     let connectSent = false
+    let connectPoll: ReturnType<typeof setInterval> | undefined
     const requestId = `mc-rpc-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const connectId = `${requestId}-connect`
     const ws = new WebSocket(url)
 
     const cleanup = () => {
       clearTimeout(timeout)
+      clearInterval(connectPoll)
       ws.removeAllListeners()
       try {
         if (ws.readyState === WEBSOCKET_OPEN || ws.readyState === WEBSOCKET_CONNECTING) {
@@ -173,6 +175,13 @@ export async function callOpenClawGateway<T = unknown>(
     const timeout = setTimeout(() => {
       fail(`Gateway method ${method} timed out after ${boundedTimeoutMs}ms`)
     }, boundedTimeoutMs)
+
+    // A loopback connection can open and receive its challenge before the
+    // bundled EventEmitter listeners observe either event. Polling readyState
+    // keeps the handshake deterministic without sending duplicate requests.
+    connectPoll = setInterval(() => {
+      sendConnect()
+    }, 10)
 
     ws.on('open', () => {
       // Token-authenticated backend clients do not sign the challenge nonce,

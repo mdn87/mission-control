@@ -146,6 +146,7 @@ describe('callOpenClawGateway', () => {
     )
 
     expect(source).toContain('const WEBSOCKET_OPEN = 1')
+    expect(source).toContain('connectPoll = setInterval')
     expect(source).not.toContain('WebSocket.OPEN')
     expect(source).not.toContain('WebSocket.CONNECTING')
   })
