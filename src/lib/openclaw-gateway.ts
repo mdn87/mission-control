@@ -98,14 +98,12 @@ export async function callOpenClawGateway<T = unknown>(
     let settled = false
     let connected = false
     let connectSent = false
-    let connectFallback: ReturnType<typeof setTimeout> | undefined
     const requestId = `mc-rpc-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const connectId = `${requestId}-connect`
     const ws = new WebSocket(url)
 
     const cleanup = () => {
       clearTimeout(timeout)
-      clearTimeout(connectFallback)
       ws.removeAllListeners()
       try {
         if (ws.readyState === WEBSOCKET_OPEN || ws.readyState === WEBSOCKET_CONNECTING) {
@@ -177,12 +175,10 @@ export async function callOpenClawGateway<T = unknown>(
     }, boundedTimeoutMs)
 
     ws.on('open', () => {
-      // Newer gateways send connect.challenge first. Start the compatibility
-      // fallback only after the socket opens so a slow TCP handshake cannot
-      // consume the fallback before sendConnect is able to write.
-      connectFallback = setTimeout(() => {
-        sendConnect()
-      }, 100)
+      // Token-authenticated backend clients do not sign the challenge nonce,
+      // so they can connect immediately. This also avoids depending on a
+      // challenge event surviving the production Next.js bundle boundary.
+      sendConnect()
     })
 
     ws.on('message', (raw) => {
@@ -194,7 +190,6 @@ export async function callOpenClawGateway<T = unknown>(
       }
 
       if (frame.type === 'event' && frame.event === 'connect.challenge') {
-        connectSent = false
         sendConnect(frame.payload?.nonce)
         return
       }
