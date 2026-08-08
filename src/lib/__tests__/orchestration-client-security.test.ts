@@ -15,6 +15,8 @@ describe('Orchestration client security contract', () => {
 
     expect(source).toContain('function orchestrationError')
     expect(source).toContain('function isOrchestrationNetworkFailure')
+    expect(source).toContain('JSON.stringify({ to: selectedAgent, message, from: \'operator\' })')
+    expect(source).not.toContain('JSON.stringify({ to: selectedAgent, content: message')
     expect(source).toContain('Usage accounting is best-effort')
     expect(source.match(/raw: true/g)).toHaveLength(3)
     expect(source.match(/fetchData\(\)/g)).toHaveLength(4)

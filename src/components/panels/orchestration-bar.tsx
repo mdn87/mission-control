@@ -109,7 +109,7 @@ export function OrchestrationBar() {
     try {
       await apiFetch<Record<string, unknown>>('/api/agents/message', {
         method: 'POST',
-        body: JSON.stringify({ to: selectedAgent, content: message, from: 'operator' })
+        body: JSON.stringify({ to: selectedAgent, message, from: 'operator' })
       })
       setCommandResult({ ok: true, text: `Message sent to ${selectedAgent}` })
       setMessage('')
