@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { WebSocketServer } from 'ws'
 
 const mocks = vi.hoisted(() => ({
@@ -135,6 +137,17 @@ describe('callOpenClawGateway', () => {
         deliver: false,
       },
     })
+  })
+
+  it('does not depend on constructor static ready-state properties after bundling', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/lib/openclaw-gateway.ts'),
+      'utf8',
+    )
+
+    expect(source).toContain('const WEBSOCKET_OPEN = 1')
+    expect(source).not.toContain('WebSocket.OPEN')
+    expect(source).not.toContain('WebSocket.CONNECTING')
   })
 
   it('rejects gateway RPC errors', async () => {

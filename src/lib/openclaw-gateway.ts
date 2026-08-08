@@ -7,6 +7,8 @@ import { getDetectedGatewayToken } from './gateway-runtime'
 const GATEWAY_PROTOCOL_VERSION = 4
 const GATEWAY_CLIENT_ID = process.env.GATEWAY_CLIENT_ID || 'gateway-client'
 const GATEWAY_SCOPES = ['operator.admin', 'operator.write', 'operator.read']
+const WEBSOCKET_CONNECTING = 0
+const WEBSOCKET_OPEN = 1
 
 interface GatewayFrame {
   type?: string
@@ -106,7 +108,7 @@ export async function callOpenClawGateway<T = unknown>(
       clearTimeout(connectFallback)
       ws.removeAllListeners()
       try {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        if (ws.readyState === WEBSOCKET_OPEN || ws.readyState === WEBSOCKET_CONNECTING) {
           ws.close()
         }
       } catch {
@@ -134,7 +136,7 @@ export async function callOpenClawGateway<T = unknown>(
     }
 
     const sendConnect = (_nonce?: string) => {
-      if (connectSent || settled || ws.readyState !== WebSocket.OPEN) return
+      if (connectSent || settled || ws.readyState !== WEBSOCKET_OPEN) return
       connectSent = true
       sendFrame({
         type: 'req',
