@@ -3,6 +3,10 @@ const withNextIntl = require('next-intl/plugin')('./src/i18n/request.ts')
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Keep ws on Node's native module path. Bundling it can incorrectly fold
+  // bufferutil's optional native exports, causing masked client frames to
+  // fail at runtime before the OpenClaw connect handshake is sent.
+  serverExternalPackages: ['ws'],
   outputFileTracingRoot: __dirname,
   outputFileTracingIncludes: {
     // These files are read from process.cwd() at runtime and therefore cannot

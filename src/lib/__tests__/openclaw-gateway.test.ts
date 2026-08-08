@@ -151,6 +151,15 @@ describe('callOpenClawGateway', () => {
     expect(source).not.toContain('WebSocket.CONNECTING')
   })
 
+  it('keeps ws external to the Next.js server bundle', () => {
+    const nextConfigSource = readFileSync(
+      join(process.cwd(), 'next.config.js'),
+      'utf8',
+    )
+
+    expect(nextConfigSource).toMatch(/serverExternalPackages:\s*\[[^\]]*['"]ws['"]/)
+  })
+
   it('rejects gateway RPC errors', async () => {
     server.once('connection', (ws) => {
       ws.removeAllListeners('message')
