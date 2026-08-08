@@ -50,3 +50,7 @@ docs/_*.png
 
 # IDE state
 .vs/
+
+# Local Codex session continuity
+.Codex/handoff.md
+.Codex/handoff-history/
