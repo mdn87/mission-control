@@ -56,9 +56,9 @@ export async function POST(request: NextRequest) {
     }
 
     await callOpenClawGateway(
-      'sessions_send',
+      'sessions.send',
       {
-        sessionKey: agent.session_key,
+        key: agent.session_key,
         message: `Message from ${from}: ${message}`,
       },
       10_000,

@@ -10,8 +10,8 @@ describe('Agent message gateway contract', () => {
     )
 
     expect(source).toContain("import { callOpenClawGateway } from '@/lib/openclaw-gateway'")
-    expect(source).toContain("'sessions_send'")
-    expect(source).toContain('sessionKey: agent.session_key')
+    expect(source).toContain("'sessions.send'")
+    expect(source).toContain('key: agent.session_key')
     expect(source).not.toContain('runOpenClaw')
   })
 })
