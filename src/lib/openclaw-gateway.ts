@@ -96,6 +96,7 @@ export async function callOpenClawGateway<T = unknown>(
     let settled = false
     let connected = false
     let connectSent = false
+    let connectFallback: ReturnType<typeof setTimeout> | undefined
     const requestId = `mc-rpc-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const connectId = `${requestId}-connect`
     const ws = new WebSocket(url)
@@ -173,13 +174,13 @@ export async function callOpenClawGateway<T = unknown>(
       fail(`Gateway method ${method} timed out after ${boundedTimeoutMs}ms`)
     }, boundedTimeoutMs)
 
-    const connectFallback = setTimeout(() => {
-      sendConnect()
-    }, 100)
-
     ws.on('open', () => {
-      // Newer gateways send connect.challenge first. The short fallback above
-      // covers older/test gateways that accept connect immediately.
+      // Newer gateways send connect.challenge first. Start the compatibility
+      // fallback only after the socket opens so a slow TCP handshake cannot
+      // consume the fallback before sendConnect is able to write.
+      connectFallback = setTimeout(() => {
+        sendConnect()
+      }, 100)
     })
 
     ws.on('message', (raw) => {

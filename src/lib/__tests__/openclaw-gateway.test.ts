@@ -4,6 +4,7 @@ import { WebSocketServer } from 'ws'
 const mocks = vi.hoisted(() => ({
   port: 19876,
   requestFrames: [] as any[],
+  sendChallenge: true,
 }))
 
 vi.mock('@/lib/config', () => ({
@@ -24,11 +25,13 @@ let server: WebSocketServer
 beforeAll(async () => {
   server = new WebSocketServer({ host: '127.0.0.1', port: mocks.port })
   server.on('connection', (ws) => {
-    ws.send(JSON.stringify({
-      type: 'event',
-      event: 'connect.challenge',
-      payload: { nonce: 'nonce-1' },
-    }))
+    if (mocks.sendChallenge) {
+      ws.send(JSON.stringify({
+        type: 'event',
+        event: 'connect.challenge',
+        payload: { nonce: 'nonce-1' },
+      }))
+    }
 
     ws.on('message', (raw) => {
       const frame = JSON.parse(raw.toString())
@@ -95,6 +98,7 @@ describe('parseGatewayJsonOutput', () => {
 describe('callOpenClawGateway', () => {
   beforeEach(() => {
     mocks.requestFrames = []
+    mocks.sendChallenge = true
   })
 
   it('sends params over the programmatic websocket RPC path', async () => {
@@ -142,5 +146,22 @@ describe('callOpenClawGateway', () => {
       message: 'hello',
       deliver: false,
     }, 5000)).rejects.toThrow('boom')
+  })
+
+  it('connects to gateways that do not send a challenge', async () => {
+    mocks.sendChallenge = false
+
+    const result = await callOpenClawGateway('sessions_send', {
+      sessionKey: 'agent:test:main',
+      message: 'hello',
+    }, 5000)
+
+    expect(result).toMatchObject({
+      ok: true,
+      echo: {
+        sessionKey: 'agent:test:main',
+        message: 'hello',
+      },
+    })
   })
 })
