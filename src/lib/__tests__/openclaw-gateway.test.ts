@@ -3,6 +3,7 @@ import { WebSocketServer } from 'ws'
 
 const mocks = vi.hoisted(() => ({
   port: 19876,
+  connectFrames: [] as any[],
   requestFrames: [] as any[],
   sendChallenge: true,
 }))
@@ -36,6 +37,7 @@ beforeAll(async () => {
     ws.on('message', (raw) => {
       const frame = JSON.parse(raw.toString())
       if (frame.method === 'connect') {
+        mocks.connectFrames.push(frame)
         ws.send(JSON.stringify({
           type: 'res',
           id: frame.id,
@@ -97,6 +99,7 @@ describe('parseGatewayJsonOutput', () => {
 
 describe('callOpenClawGateway', () => {
   beforeEach(() => {
+    mocks.connectFrames = []
     mocks.requestFrames = []
     mocks.sendChallenge = true
   })
@@ -116,6 +119,11 @@ describe('callOpenClawGateway', () => {
         message: 'hello',
         deliver: false,
       },
+    })
+    expect(mocks.connectFrames).toHaveLength(1)
+    expect(mocks.connectFrames[0].params).toMatchObject({
+      minProtocol: 4,
+      maxProtocol: 4,
     })
     expect(mocks.requestFrames).toHaveLength(1)
     expect(mocks.requestFrames[0]).toMatchObject({
