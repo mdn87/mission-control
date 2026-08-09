@@ -6,6 +6,10 @@ import {
   type OperatorReceipt,
   type OperatorSnapshot,
 } from './operator-contract'
+import {
+  modelBudgetsSchema,
+  type ModelBudgets,
+} from './model-budgets'
 
 const OPERATOR_TIMEOUT_MS = 5000
 
@@ -101,4 +105,16 @@ export async function sendOperatorCommand(
     signal: AbortSignal.timeout(OPERATOR_TIMEOUT_MS),
   })
   return operatorReceiptSchema.parse(await checkedJson(response))
+}
+
+export async function fetchOperatorModelBudgets(): Promise<ModelBudgets> {
+  const response = await fetch(operatorUrl('/operator/v1/model-budgets'), {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${commandToken()}`,
+    },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(OPERATOR_TIMEOUT_MS),
+  })
+  return modelBudgetsSchema.parse(await checkedJson(response))
 }

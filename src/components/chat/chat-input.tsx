@@ -4,9 +4,22 @@ import Image from 'next/image'
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useMissionControl, type ChatAttachment } from '@/store'
 import { Button } from '@/components/ui/button'
+import { apiFetch } from '@/lib/api-client'
+import {
+  getPaidModelLane,
+  isModelBudgetSnapshotFresh,
+  LOCAL_CHAT_MODEL,
+  type ModelBudgets,
+} from '@/integrations/lugos/model-budgets'
+import { PaidModelControl, formatUsd } from './paid-model-control'
+
+export type ChatSendOptions = {
+  model?: string
+  paidModelConfirmed?: boolean
+}
 
 interface ChatInputProps {
-  onSend: (content: string, attachments?: ChatAttachment[]) => void
+  onSend: (content: string, attachments?: ChatAttachment[], options?: ChatSendOptions) => void
   onAbort?: () => void
   disabled?: boolean
   agents?: Array<{ name: string; role: string }>
@@ -22,6 +35,11 @@ export function ChatInput({ onSend, onAbort, disabled, agents = [], isGenerating
   const [mentionIndex, setMentionIndex] = useState(0)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const [selectedModel, setSelectedModel] = useState(LOCAL_CHAT_MODEL)
+  const [budgets, setBudgets] = useState<ModelBudgets | null>(null)
+  const [budgetLoading, setBudgetLoading] = useState(true)
+  const [budgetError, setBudgetError] = useState<string | null>(null)
+  const [confirmPaidSend, setConfirmPaidSend] = useState(false)
 
   const filteredAgents = agents.filter(a =>
     a.name.toLowerCase().includes(mentionFilter.toLowerCase())
@@ -45,6 +63,38 @@ export function ChatInput({ onSend, onAbort, disabled, agents = [], isGenerating
       textareaRef.current?.focus()
     }
   }, [disabled])
+
+  useEffect(() => {
+    let active = true
+    const loadBudgets = async () => {
+      try {
+        const next = await apiFetch<ModelBudgets>('/api/lugos/model-budgets')
+        if (!active) return
+        setBudgets(next)
+        setBudgetError(null)
+      } catch {
+        if (!active) return
+        setBudgetError('Paid-model budget status is unavailable')
+      } finally {
+        if (active) setBudgetLoading(false)
+      }
+    }
+    void loadBudgets()
+    const interval = window.setInterval(loadBudgets, 30_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (selectedModel === LOCAL_CHAT_MODEL) return
+    const lane = budgets ? getPaidModelLane(budgets, selectedModel) : null
+    if (budgetError || !budgets || !isModelBudgetSnapshotFresh(budgets) || lane?.status === 'blocked') {
+      setSelectedModel(LOCAL_CHAT_MODEL)
+      setConfirmPaidSend(false)
+    }
+  }, [budgetError, budgets, selectedModel])
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const fileArray = Array.from(files)
@@ -175,6 +225,12 @@ export function ChatInput({ onSend, onAbort, disabled, agents = [], isGenerating
   const handleSend = () => {
     const trimmed = chatInput.trim()
     if ((!trimmed && attachments.length === 0) || disabled || isSendingMessage) return
+    if (selectedModel !== LOCAL_CHAT_MODEL) {
+      const lane = budgets ? getPaidModelLane(budgets, selectedModel) : null
+      if (!lane || !isModelBudgetSnapshotFresh(budgets!) || lane.status === 'blocked') return
+      setConfirmPaidSend(true)
+      return
+    }
     onSend(trimmed, attachments.length > 0 ? attachments : undefined)
     setChatInput('')
     setAttachments([])
@@ -182,6 +238,32 @@ export function ChatInput({ onSend, onAbort, disabled, agents = [], isGenerating
       textareaRef.current.style.height = 'auto'
     }
   }
+
+  const handleConfirmedPaidSend = () => {
+    const trimmed = chatInput.trim()
+    const lane = budgets ? getPaidModelLane(budgets, selectedModel) : null
+    if (
+      (!trimmed && attachments.length === 0)
+      || !lane
+      || !budgets
+      || !isModelBudgetSnapshotFresh(budgets)
+      || lane.status === 'blocked'
+    ) {
+      setConfirmPaidSend(false)
+      return
+    }
+    onSend(
+      trimmed,
+      attachments.length > 0 ? attachments : undefined,
+      { model: lane.model, paidModelConfirmed: true },
+    )
+    setChatInput('')
+    setAttachments([])
+    setConfirmPaidSend(false)
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+  }
+
+  const selectedPaidLane = budgets ? getPaidModelLane(budgets, selectedModel) : null
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`
@@ -196,6 +278,55 @@ export function ChatInput({ onSend, onAbort, disabled, agents = [], isGenerating
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      <PaidModelControl
+        selectedModel={selectedModel}
+        onModelChange={model => {
+          setSelectedModel(model)
+          setConfirmPaidSend(false)
+        }}
+        budgets={budgets}
+        loading={budgetLoading}
+        error={budgetError}
+      />
+
+      {confirmPaidSend && selectedPaidLane && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Confirm paid ${selectedPaidLane.label} request`}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-xs"
+        >
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl">
+            <div className="text-sm font-semibold text-foreground">
+              Use paid {selectedPaidLane.label} for this message?
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              This is a one-message override. Local RTX 3060 remains the default and no automatic fallback is enabled.
+            </p>
+            <div className="mt-3 rounded-lg border border-border/70 bg-surface-1 p-3 text-xs">
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Remaining budget</span>
+                <span className="font-mono text-foreground">
+                  {formatUsd(selectedPaidLane.remainingUsd)} / {formatUsd(selectedPaidLane.maxBudgetUsd)}
+                </span>
+              </div>
+              <div className="mt-1 flex justify-between gap-4">
+                <span className="text-muted-foreground">Budget window</span>
+                <span className="text-foreground">Rolling {selectedPaidLane.budgetDuration}</span>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setConfirmPaidSend(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleConfirmedPaidSend}>
+                Use {selectedPaidLane.label}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mention autocomplete dropdown */}
       {showMentions && filteredAgents.length > 0 && (
         <div className="absolute bottom-full left-3 right-3 mb-1 bg-popover/95 backdrop-blur-lg border border-border rounded-lg shadow-xl overflow-hidden max-h-40 overflow-y-auto z-10">

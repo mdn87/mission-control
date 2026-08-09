@@ -5,11 +5,32 @@ import {
   type MailHandoffCommand,
 } from './operator-contract'
 import {
+  fetchOperatorModelBudgets,
   fetchOperatorSnapshot,
   openOperatorEventStream,
   sendOperatorCommand,
 } from './operator-client'
 import { makeReceipt, makeSnapshot } from './__tests__/fixtures'
+import { DEEPSEEK_CHAT_MODEL, GROK_CHAT_MODEL, LOCAL_CHAT_MODEL } from './model-budgets'
+
+const modelBudgets = {
+  schema: 'lugos-model-budgets/v1' as const,
+  generatedAt: '2026-08-08T23:10:00.000Z',
+  staleAfterSeconds: 120,
+  defaultModel: LOCAL_CHAT_MODEL,
+  lanes: [
+    {
+      id: 'deepseek' as const, label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA',
+      paid: true as const, maxBudgetUsd: 2, spendUsd: 0, remainingUsd: 2,
+      percentUsed: 0, budgetDuration: '30d' as const, resetAt: null, status: 'healthy' as const,
+    },
+    {
+      id: 'grok' as const, label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI',
+      paid: true as const, maxBudgetUsd: 2, spendUsd: 0, remainingUsd: 2,
+      percentUsed: 0, budgetDuration: '30d' as const, resetAt: null, status: 'healthy' as const,
+    },
+  ],
+}
 
 const command: ApprovalRequestCommand = {
   schema: OPERATOR_COMMAND_SCHEMA,
@@ -71,6 +92,16 @@ describe('Lugos operator server client', () => {
     expect(String(url)).toBe('http://127.0.0.1:3231/operator/v1/commands')
     expect(init.headers.Authorization).toBe('Bearer local-test-token-12345')
     expect(JSON.parse(init.body)).toEqual(command)
+  })
+
+  it('uses the server-only bearer for the sanitized paid-model budget read', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(modelBudgets))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchOperatorModelBudgets()).resolves.toEqual(modelBudgets)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toBe('http://127.0.0.1:3231/operator/v1/model-budgets')
+    expect(init.headers.Authorization).toBe('Bearer local-test-token-12345')
   })
 
   it('forwards the typed handoff through the same server-only bearer boundary', async () => {
