@@ -13,13 +13,30 @@ upstream commit `17186288ef28341723999a040b3b7baa55427a2c`.
 | Browser → Mission Control command route | Mission Control `operator` session or higher | Mission Control-local, disposable |
 | Mission Control → Lugos snapshot/SSE | Loopback service boundary | Lugos projection contract |
 | Mission Control → Lugos commands | Server-side `LUGOS_OPERATOR_API_TOKEN` | Lugos command allowlist and receipts |
+| Mission Control → paid-model budgets | Server-side `LUGOS_OPERATOR_API_TOKEN` | Root-owned sanitized budget snapshot |
 
 The browser calls only `/api/lugos/*`. It never receives the Lugos endpoint or
 bearer. Snapshot, event, command, and receipt payloads are parsed against the
 strict `lugos-operator-*/v1` schemas. Unknown fields and schemas fail closed.
+Raw provider keys, OmniRoute keys, and LiteLLM's master key never cross this
+loopback boundary.
 
 Mission Control does not write these objects to SQLite. Its database continues
 to own only Mission Control users, roles, sessions, and local UI state.
+
+## Paid-model chat controls
+
+Chat defaults to the local RTX 3060 route. DeepSeek and Grok are operator-only,
+one-message overrides: the operator must select the paid lane and confirm the
+send in a second action. Mission Control then rechecks the approved model,
+snapshot freshness, and remaining rolling 30-day budget on the server. Paid
+routes fail closed when budget data is unavailable, stale, or exhausted; there
+is no automatic paid fallback.
+
+The UI receives only the two approved lanes, current spend/remaining amounts,
+and derived `healthy`, `watch`, `warning`, or `blocked` status. The root-owned
+exporter refreshes that sanitized projection every minute. Each lane is capped
+at `$2 / 30d`, with visible 50% and 80% warnings and a hard block at 100%.
 
 ## Week-3 spatial overview
 

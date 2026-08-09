@@ -7,7 +7,7 @@ import { useSmartPoll } from '@/lib/use-smart-poll'
 import { createClientLogger } from '@/lib/client-logger'
 import { ConversationList } from './conversation-list'
 import { MessageList } from './message-list'
-import { ChatInput } from './chat-input'
+import { ChatInput, type ChatSendOptions } from './chat-input'
 import { Button } from '@/components/ui/button'
 import { SessionMessage, shouldShowTimestamp, type SessionTranscriptMessage } from './session-message'
 import { getSessionKindLabel, SessionKindAvatar } from './session-kind-brand'
@@ -148,7 +148,11 @@ export function ChatWorkspace({ mode = 'embedded', onClose }: ChatWorkspaceProps
   }, [isOverlay, onClose])
 
   // Send message handler with optimistic updates
-  const handleSend = async (content: string, attachments?: ChatAttachment[]) => {
+  const handleSend = async (
+    content: string,
+    attachments?: ChatAttachment[],
+    options?: ChatSendOptions,
+  ) => {
     if (!activeConversation) return
 
     const mentionMatch = content.match(/^@(\w+)\s/)
@@ -188,6 +192,8 @@ export function ChatWorkspace({ mode = 'embedded', onClose }: ChatWorkspaceProps
           message_type: 'text',
           attachments,
           forward: true,
+          ...(options?.model ? { model: options.model } : {}),
+          ...(options?.paidModelConfirmed ? { paidModelConfirmed: true } : {}),
         }),
       })
 

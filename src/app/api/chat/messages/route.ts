@@ -9,6 +9,10 @@ import { scanForInjection, sanitizeForPrompt } from '@/lib/injection-guard'
 import { callOpenClawGateway } from '@/lib/openclaw-gateway'
 import { resolveCoordinatorDeliveryTarget } from '@/lib/coordinator-routing'
 import { getWorkspaceIsolation } from '@/lib/workspace-isolation'
+import {
+  authorizeChatModelRequest,
+  PaidModelAuthorizationError,
+} from '@/lib/paid-model-authorization'
 
 type ForwardInfo = {
   attempted: boolean
@@ -16,6 +20,7 @@ type ForwardInfo = {
   reason?: string
   session?: string
   runId?: string
+  model?: string
 }
 
 type ToolEvent = {
@@ -358,6 +363,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    let paidModel: string | null
+    try {
+      const authorization = await authorizeChatModelRequest({
+        model: body.model,
+        paidModelConfirmed: body.paidModelConfirmed,
+      })
+      paidModel = authorization.paidModel
+    } catch (error) {
+      if (error instanceof PaidModelAuthorizationError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+      throw error
+    }
+
     // Scan content for injection when it will be forwarded to an agent
     if (body.forward && to) {
       const injectionReport = scanForInjection(content, { context: 'prompt' })
@@ -510,7 +529,33 @@ export async function POST(request: NextRequest) {
           try {
             const idempotencyKey = `mc-${messageId}-${Date.now()}`
 
-            if (sessionKey) {
+            if (paidModel) {
+              const gatewayAttachments = toGatewayAttachments(body.attachments)
+              const invokeParams: Record<string, unknown> = {
+                message: sessionKey ? content : `Message from ${from}: ${content}`,
+                idempotencyKey,
+                deliver: false,
+                model: paidModel,
+                ...(sessionKey ? { sessionKey } : {}),
+                ...(openclawAgentId ? { agentId: openclawAgentId } : {}),
+                ...(gatewayAttachments ? { attachments: gatewayAttachments } : {}),
+              }
+              const acceptedPayload = await callOpenClawGateway<any>(
+                'agent',
+                invokeParams,
+                12000,
+              )
+              const status = String(acceptedPayload?.status || '').toLowerCase()
+              forwardInfo.delivered = status === 'started'
+                || status === 'ok'
+                || status === 'in_flight'
+                || status === 'accepted'
+              forwardInfo.session = sessionKey || openclawAgentId || undefined
+              forwardInfo.model = paidModel
+              if (typeof acceptedPayload?.runId === 'string' && acceptedPayload.runId) {
+                forwardInfo.runId = acceptedPayload.runId
+              }
+            } else if (sessionKey) {
               const acceptedPayload = await callOpenClawGateway<any>(
                 'chat.send',
                 {
