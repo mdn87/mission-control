@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDatabase, db_helpers, Message } from '@/lib/db'
+import { getDatabase, db_helpers, logAuditEvent, Message } from '@/lib/db'
 import { runOpenClaw } from '@/lib/command'
 import { getAllGatewaySessions } from '@/lib/sessions'
 import { eventBus } from '@/lib/event-bus'
@@ -13,6 +13,8 @@ import {
   authorizeChatModelRequest,
   PaidModelAuthorizationError,
 } from '@/lib/paid-model-authorization'
+import { buildPaidModelRequestAuditDetail } from '@/lib/paid-model-observability'
+import type { ModelBudgetLane } from '@/integrations/lugos/model-budgets'
 
 type ForwardInfo = {
   attempted: boolean
@@ -364,14 +366,34 @@ export async function POST(request: NextRequest) {
     }
 
     let paidModel: string | null
+    let paidBudget: { generatedAt: string; lane: ModelBudgetLane } | null
     try {
       const authorization = await authorizeChatModelRequest({
         model: body.model,
         paidModelConfirmed: body.paidModelConfirmed,
       })
       paidModel = authorization.paidModel
+      paidBudget = authorization.budget
     } catch (error) {
       if (error instanceof PaidModelAuthorizationError) {
+        try {
+          logAuditEvent({
+            action: 'paid_model.request_denied',
+            actor: auth.user.username,
+            actor_id: auth.user.id,
+            target_type: 'paid_model',
+            workspace_id: workspaceId,
+            detail: buildPaidModelRequestAuditDetail({
+              model: body.model,
+              confirmed: body.paidModelConfirmed,
+              outcome: 'denied',
+              httpStatus: error.status,
+              reason: error.message,
+            }),
+          })
+        } catch (auditError) {
+          logger.warn({ err: auditError }, 'Paid-model denial audit write failed')
+        }
         return NextResponse.json({ error: error.message }, { status: error.status })
       }
       throw error
@@ -775,6 +797,36 @@ export async function POST(request: NextRequest) {
             }
           }
         }
+      }
+    }
+
+    if (paidModel && paidBudget) {
+      try {
+        const outcome = forwardInfo?.delivered
+          ? 'gateway_accepted'
+          : body.forward
+            ? 'not_delivered'
+            : 'not_forwarded'
+        logAuditEvent({
+          action: 'paid_model.request_result',
+          actor: auth.user.username,
+          actor_id: auth.user.id,
+          target_type: 'paid_model',
+          target_id: paidBudget.lane.id === 'deepseek' ? 1 : 2,
+          workspace_id: workspaceId,
+          detail: buildPaidModelRequestAuditDetail({
+            model: paidModel,
+            confirmed: body.paidModelConfirmed,
+            outcome,
+            lane: paidBudget.lane,
+            generatedAt: paidBudget.generatedAt,
+            reason: forwardInfo?.reason,
+            gatewayDelivered: forwardInfo?.delivered ?? false,
+            runId: forwardInfo?.runId,
+          }),
+        })
+      } catch (auditError) {
+        logger.warn({ err: auditError }, 'Paid-model result audit write failed')
       }
     }
 

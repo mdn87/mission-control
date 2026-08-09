@@ -4,6 +4,7 @@ import {
   isModelBudgetSnapshotFresh,
   LOCAL_CHAT_MODEL,
   type ModelBudgets,
+  type ModelBudgetLane,
 } from '@/integrations/lugos/model-budgets'
 import { fetchOperatorModelBudgets } from '@/integrations/lugos/operator-client'
 
@@ -25,9 +26,14 @@ export async function authorizeChatModelRequest({
   model: unknown
   paidModelConfirmed: unknown
   loadBudgets?: () => Promise<ModelBudgets>
-}): Promise<{ paidModel: string | null }> {
+}): Promise<{
+  paidModel: string | null
+  budget: { generatedAt: string; lane: ModelBudgetLane } | null
+}> {
   const requestedModel = typeof model === 'string' ? model.trim() : ''
-  if (!requestedModel || requestedModel === LOCAL_CHAT_MODEL) return { paidModel: null }
+  if (!requestedModel || requestedModel === LOCAL_CHAT_MODEL) {
+    return { paidModel: null, budget: null }
+  }
   if (!isApprovedChatModel(requestedModel)) {
     throw new PaidModelAuthorizationError('Requested model is not approved for operator chat', 400)
   }
@@ -51,5 +57,8 @@ export async function authorizeChatModelRequest({
   if (lane.status === 'blocked' || lane.remainingUsd <= 0) {
     throw new PaidModelAuthorizationError(`${lane.label} budget is exhausted`, 429)
   }
-  return { paidModel: lane.model }
+  return {
+    paidModel: lane.model,
+    budget: { generatedAt: budgets.generatedAt, lane },
+  }
 }

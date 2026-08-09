@@ -17,6 +17,7 @@ export const modelBudgetLaneSchema = z.object({
   provider: z.string().min(1).max(32),
   paid: z.literal(true),
   maxBudgetUsd: z.literal(2),
+  maxOutputTokens: z.literal(2048),
   spendUsd: z.number().finite().nonnegative(),
   remainingUsd: z.number().finite().nonnegative(),
   percentUsed: z.number().finite().nonnegative(),
