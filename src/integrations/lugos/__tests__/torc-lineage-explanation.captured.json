@@ -1,0 +1,654 @@
+{
+  "authority_changes": [
+    {
+      "detail": null,
+      "from_authority": null,
+      "kind": "lineage_created",
+      "occurred_at": "2026-08-08T22:37:33.907659Z",
+      "record_refs": {
+        "handoff_id": null,
+        "handoff_result_id": null,
+        "resulting_revision_sha256": "5f8dc9339947d0808d1e64b6fd7c6fe0029d4805cc70a998e12591b4e0262617"
+      },
+      "resulting_revision_id": "revision-127429cd919846ac811909a74491d83e",
+      "sequence": 1,
+      "summary": "Initial authority was acquired by activation-p2-implementation on codex-windows-p2.",
+      "to_authority": {
+        "activation_current_state": "suspended",
+        "activation_id": "activation-p2-implementation",
+        "lease_current_status": "closed",
+        "lease_id": "lease-5c0bb0051a9e4f89a2001d47db17e6ea",
+        "substrate_id": "codex-windows-p2",
+        "substrate_label": "Codex implementation session on Windows"
+      },
+      "transition_id": "transition-22aed118189a475287545bee65dc01a9"
+    },
+    {
+      "detail": {
+        "acceptance": {
+          "checks": [
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "lineage_identity"
+            },
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "current_responsibility"
+            },
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "settled_decisions"
+            },
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "active_commitments"
+            },
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "hard_constraints"
+            },
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "unresolved_work"
+            },
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "uncertainties"
+            },
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "handoff_reason"
+            },
+            {
+              "evidence": "target reconstruction matches frozen canonical continuity",
+              "passed": true,
+              "requirement": "source_revision_id"
+            }
+          ],
+          "disposition": "accepted",
+          "failed_requirements": [],
+          "passed_requirements": 9,
+          "total_requirements": 9
+        },
+        "fit": {
+          "candidates": [
+            {
+              "disqualifications": [],
+              "eligible": true,
+              "factors": [
+                {
+                  "evidence": "2/2 required capabilities",
+                  "name": "capability_coverage",
+                  "score": 3.0,
+                  "value": 1.0,
+                  "weight": 3
+                },
+                {
+                  "evidence": "32000 available for 1000 required units",
+                  "name": "context_headroom",
+                  "score": 2.0,
+                  "value": 1.0,
+                  "weight": 2
+                },
+                {
+                  "evidence": "declared affinities: review",
+                  "name": "task_affinity",
+                  "score": 4.0,
+                  "value": 1.0,
+                  "weight": 4
+                },
+                {
+                  "evidence": "candidate differs from the source implementation substrate",
+                  "name": "independence",
+                  "score": 5.0,
+                  "value": 1.0,
+                  "weight": 5
+                }
+              ],
+              "substrate_id": "claude-wsl-p2",
+              "total_score": 14.0
+            },
+            {
+              "disqualifications": [],
+              "eligible": true,
+              "factors": [
+                {
+                  "evidence": "2/2 required capabilities",
+                  "name": "capability_coverage",
+                  "score": 3.0,
+                  "value": 1.0,
+                  "weight": 3
+                },
+                {
+                  "evidence": "32000 available for 1000 required units",
+                  "name": "context_headroom",
+                  "score": 2.0,
+                  "value": 1.0,
+                  "weight": 2
+                },
+                {
+                  "evidence": "declared affinities: implementation",
+                  "name": "task_affinity",
+                  "score": 0.0,
+                  "value": 0.0,
+                  "weight": 4
+                },
+                {
+                  "evidence": "candidate is the source implementation substrate",
+                  "name": "independence",
+                  "score": 0.0,
+                  "value": 0.0,
+                  "weight": 5
+                }
+              ],
+              "substrate_id": "codex-windows-p2",
+              "total_score": 5.0
+            }
+          ],
+          "decided_at": "2026-08-08T22:37:36.229840Z",
+          "fit_decision_id": "fit-0f1793d4e95048d497c618be2e2c6d9b",
+          "policy_version": "p0-1",
+          "requirements": {
+            "capabilities": [
+              "repository_read",
+              "verification_execute"
+            ],
+            "minimum_context_units": 1000,
+            "policy_labels": [
+              "local-workspace"
+            ]
+          },
+          "selected_candidate": {
+            "disqualifications": [],
+            "eligible": true,
+            "factors": [
+              {
+                "evidence": "2/2 required capabilities",
+                "name": "capability_coverage",
+                "score": 3.0,
+                "value": 1.0,
+                "weight": 3
+              },
+              {
+                "evidence": "32000 available for 1000 required units",
+                "name": "context_headroom",
+                "score": 2.0,
+                "value": 1.0,
+                "weight": 2
+              },
+              {
+                "evidence": "declared affinities: review",
+                "name": "task_affinity",
+                "score": 4.0,
+                "value": 1.0,
+                "weight": 4
+              },
+              {
+                "evidence": "candidate differs from the source implementation substrate",
+                "name": "independence",
+                "score": 5.0,
+                "value": 1.0,
+                "weight": 5
+              }
+            ],
+            "substrate_id": "claude-wsl-p2",
+            "total_score": 14.0
+          },
+          "selected_substrate_id": "claude-wsl-p2",
+          "selection_grants_execution_authority": false,
+          "task_phase": "independent-review"
+        },
+        "fit_selection_grants_authority": false,
+        "handoff_id": "handoff-6955e14c25654ed7a58622585c45522f",
+        "handoff_result_id": "handoff-result-5bca4482faf244a8878e41eeeb6bd88e",
+        "rationale": "The bounded implementation batch is ready for independent review.",
+        "reason_code": "task_phase_transition",
+        "recovery_context": null
+      },
+      "from_authority": {
+        "activation_current_state": "suspended",
+        "activation_id": "activation-p2-implementation",
+        "lease_current_status": "closed",
+        "lease_id": "lease-5c0bb0051a9e4f89a2001d47db17e6ea",
+        "substrate_id": "codex-windows-p2",
+        "substrate_label": "Codex implementation session on Windows"
+      },
+      "kind": "handoff",
+      "occurred_at": "2026-08-08T22:46:18.973874Z",
+      "record_refs": {
+        "handoff_id": "handoff-6955e14c25654ed7a58622585c45522f",
+        "handoff_result_id": "handoff-result-5bca4482faf244a8878e41eeeb6bd88e",
+        "resulting_revision_sha256": "10968c1543d25a04a5c8fceda060aafbcc7a4c51775a97ea6749b178792ced07"
+      },
+      "resulting_revision_id": "revision-bef3f88a520e4f8ea5f63b68d9ff387f",
+      "sequence": 2,
+      "summary": "Accepted task_phase_transition transferred authority from activation-p2-implementation to activation-p2-review-claude after continuity passed 9/9.",
+      "to_authority": {
+        "activation_current_state": "active",
+        "activation_id": "activation-p2-review-claude",
+        "lease_current_status": "active",
+        "lease_id": "lease-13873cd204464806b0916a7499645019",
+        "substrate_id": "claude-wsl-p2",
+        "substrate_label": "Claude Code review session in WSL2"
+      },
+      "transition_id": "transition-19af433d8a6541dfb7dc6d45c80f4957"
+    }
+  ],
+  "canonical": false,
+  "continuity_events": [
+    {
+      "authority_changed": true,
+      "created_at": "2026-08-08T22:37:33.896257Z",
+      "event_type": "lineage_created",
+      "evidence_refs": [
+        "evidence-operator-decision"
+      ],
+      "related_revision_id": null,
+      "revision_id": "revision-127429cd919846ac811909a74491d83e",
+      "summary": "Lineage root created; initial authority was established separately."
+    },
+    {
+      "authority_changed": false,
+      "created_at": "2026-08-08T22:37:35.059193Z",
+      "event_type": "checkpoint",
+      "evidence_refs": [
+        "worktree-p2-pilot-diff"
+      ],
+      "related_revision_id": null,
+      "revision_id": "revision-6edd2ca6a80843d4ad81ec708a5ea6a5",
+      "summary": "Authoritative bearer advanced canonical history without transfer."
+    },
+    {
+      "authority_changed": true,
+      "created_at": "2026-08-08T22:46:18.973874Z",
+      "event_type": "handoff_accepted",
+      "evidence_refs": [
+        "handoff-6955e14c25654ed7a58622585c45522f",
+        "handoff-result-5bca4482faf244a8878e41eeeb6bd88e"
+      ],
+      "related_revision_id": null,
+      "revision_id": "revision-bef3f88a520e4f8ea5f63b68d9ff387f",
+      "summary": "Accepted handoff advanced the head and transferred authority."
+    }
+  ],
+  "current_authority": {
+    "acquired_by_transition_id": "transition-19af433d8a6541dfb7dc6d45c80f4957",
+    "activation_id": "activation-p2-review-claude",
+    "activation_state": "active",
+    "adapter": "manual",
+    "explanation": "Accepted task_phase_transition transferred authority from activation-p2-implementation to activation-p2-review-claude after continuity passed 9/9.",
+    "head_revision_id": "revision-bef3f88a520e4f8ea5f63b68d9ff387f",
+    "lease_id": "lease-13873cd204464806b0916a7499645019",
+    "lease_issued_at": "2026-08-08T22:46:18.973874Z",
+    "lease_status": "active",
+    "substrate_id": "claude-wsl-p2",
+    "substrate_label": "Claude Code review session in WSL2"
+  },
+  "derived": true,
+  "explanation_complete": true,
+  "fit_decisions": [
+    {
+      "candidates": [
+        {
+          "disqualifications": [],
+          "eligible": true,
+          "factors": [
+            {
+              "evidence": "2/2 required capabilities",
+              "name": "capability_coverage",
+              "score": 3.0,
+              "value": 1.0,
+              "weight": 3
+            },
+            {
+              "evidence": "32000 available for 1000 required units",
+              "name": "context_headroom",
+              "score": 2.0,
+              "value": 1.0,
+              "weight": 2
+            },
+            {
+              "evidence": "declared affinities: review",
+              "name": "task_affinity",
+              "score": 4.0,
+              "value": 1.0,
+              "weight": 4
+            },
+            {
+              "evidence": "candidate differs from the source implementation substrate",
+              "name": "independence",
+              "score": 5.0,
+              "value": 1.0,
+              "weight": 5
+            }
+          ],
+          "substrate_id": "claude-wsl-p2",
+          "total_score": 14.0
+        },
+        {
+          "disqualifications": [],
+          "eligible": true,
+          "factors": [
+            {
+              "evidence": "2/2 required capabilities",
+              "name": "capability_coverage",
+              "score": 3.0,
+              "value": 1.0,
+              "weight": 3
+            },
+            {
+              "evidence": "32000 available for 1000 required units",
+              "name": "context_headroom",
+              "score": 2.0,
+              "value": 1.0,
+              "weight": 2
+            },
+            {
+              "evidence": "declared affinities: implementation",
+              "name": "task_affinity",
+              "score": 0.0,
+              "value": 0.0,
+              "weight": 4
+            },
+            {
+              "evidence": "candidate is the source implementation substrate",
+              "name": "independence",
+              "score": 0.0,
+              "value": 0.0,
+              "weight": 5
+            }
+          ],
+          "substrate_id": "codex-windows-p2",
+          "total_score": 5.0
+        }
+      ],
+      "decided_at": "2026-08-08T22:37:36.229840Z",
+      "fit_decision_id": "fit-0f1793d4e95048d497c618be2e2c6d9b",
+      "policy_version": "p0-1",
+      "requirements": {
+        "capabilities": [
+          "repository_read",
+          "verification_execute"
+        ],
+        "minimum_context_units": 1000,
+        "policy_labels": [
+          "local-workspace"
+        ]
+      },
+      "selected_candidate": {
+        "disqualifications": [],
+        "eligible": true,
+        "factors": [
+          {
+            "evidence": "2/2 required capabilities",
+            "name": "capability_coverage",
+            "score": 3.0,
+            "value": 1.0,
+            "weight": 3
+          },
+          {
+            "evidence": "32000 available for 1000 required units",
+            "name": "context_headroom",
+            "score": 2.0,
+            "value": 1.0,
+            "weight": 2
+          },
+          {
+            "evidence": "declared affinities: review",
+            "name": "task_affinity",
+            "score": 4.0,
+            "value": 1.0,
+            "weight": 4
+          },
+          {
+            "evidence": "candidate differs from the source implementation substrate",
+            "name": "independence",
+            "score": 5.0,
+            "value": 1.0,
+            "weight": 5
+          }
+        ],
+        "substrate_id": "claude-wsl-p2",
+        "total_score": 14.0
+      },
+      "selected_substrate_id": "claude-wsl-p2",
+      "selection_grants_execution_authority": false,
+      "task_phase": "independent-review"
+    }
+  ],
+  "handoffs": [
+    {
+      "acceptance": {
+        "checks": [
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "lineage_identity"
+          },
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "current_responsibility"
+          },
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "settled_decisions"
+          },
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "active_commitments"
+          },
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "hard_constraints"
+          },
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "unresolved_work"
+          },
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "uncertainties"
+          },
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "handoff_reason"
+          },
+          {
+            "evidence": "target reconstruction matches frozen canonical continuity",
+            "passed": true,
+            "requirement": "source_revision_id"
+          }
+        ],
+        "disposition": "accepted",
+        "failed_requirements": [],
+        "passed_requirements": 9,
+        "total_requirements": 9
+      },
+      "authority_effect": "transferred",
+      "can_resolve": false,
+      "external_assignment_grants_authority": false,
+      "fit": {
+        "candidates": [
+          {
+            "disqualifications": [],
+            "eligible": true,
+            "factors": [
+              {
+                "evidence": "2/2 required capabilities",
+                "name": "capability_coverage",
+                "score": 3.0,
+                "value": 1.0,
+                "weight": 3
+              },
+              {
+                "evidence": "32000 available for 1000 required units",
+                "name": "context_headroom",
+                "score": 2.0,
+                "value": 1.0,
+                "weight": 2
+              },
+              {
+                "evidence": "declared affinities: review",
+                "name": "task_affinity",
+                "score": 4.0,
+                "value": 1.0,
+                "weight": 4
+              },
+              {
+                "evidence": "candidate differs from the source implementation substrate",
+                "name": "independence",
+                "score": 5.0,
+                "value": 1.0,
+                "weight": 5
+              }
+            ],
+            "substrate_id": "claude-wsl-p2",
+            "total_score": 14.0
+          },
+          {
+            "disqualifications": [],
+            "eligible": true,
+            "factors": [
+              {
+                "evidence": "2/2 required capabilities",
+                "name": "capability_coverage",
+                "score": 3.0,
+                "value": 1.0,
+                "weight": 3
+              },
+              {
+                "evidence": "32000 available for 1000 required units",
+                "name": "context_headroom",
+                "score": 2.0,
+                "value": 1.0,
+                "weight": 2
+              },
+              {
+                "evidence": "declared affinities: implementation",
+                "name": "task_affinity",
+                "score": 0.0,
+                "value": 0.0,
+                "weight": 4
+              },
+              {
+                "evidence": "candidate is the source implementation substrate",
+                "name": "independence",
+                "score": 0.0,
+                "value": 0.0,
+                "weight": 5
+              }
+            ],
+            "substrate_id": "codex-windows-p2",
+            "total_score": 5.0
+          }
+        ],
+        "decided_at": "2026-08-08T22:37:36.229840Z",
+        "fit_decision_id": "fit-0f1793d4e95048d497c618be2e2c6d9b",
+        "policy_version": "p0-1",
+        "requirements": {
+          "capabilities": [
+            "repository_read",
+            "verification_execute"
+          ],
+          "minimum_context_units": 1000,
+          "policy_labels": [
+            "local-workspace"
+          ]
+        },
+        "selected_candidate": {
+          "disqualifications": [],
+          "eligible": true,
+          "factors": [
+            {
+              "evidence": "2/2 required capabilities",
+              "name": "capability_coverage",
+              "score": 3.0,
+              "value": 1.0,
+              "weight": 3
+            },
+            {
+              "evidence": "32000 available for 1000 required units",
+              "name": "context_headroom",
+              "score": 2.0,
+              "value": 1.0,
+              "weight": 2
+            },
+            {
+              "evidence": "declared affinities: review",
+              "name": "task_affinity",
+              "score": 4.0,
+              "value": 1.0,
+              "weight": 4
+            },
+            {
+              "evidence": "candidate differs from the source implementation substrate",
+              "name": "independence",
+              "score": 5.0,
+              "value": 1.0,
+              "weight": 5
+            }
+          ],
+          "substrate_id": "claude-wsl-p2",
+          "total_score": 14.0
+        },
+        "selected_substrate_id": "claude-wsl-p2",
+        "selection_grants_execution_authority": false,
+        "task_phase": "independent-review"
+      },
+      "handoff_id": "handoff-6955e14c25654ed7a58622585c45522f",
+      "prepared_at": "2026-08-08T22:37:36.248370Z",
+      "rationale": "The bounded implementation batch is ready for independent review.",
+      "reason_code": "task_phase_transition",
+      "source_authority": {
+        "activation_id": "activation-p2-implementation",
+        "lease_id": "lease-5c0bb0051a9e4f89a2001d47db17e6ea",
+        "lineage_head_revision_id": "revision-6edd2ca6a80843d4ad81ec708a5ea6a5"
+      },
+      "stale_reasons": [],
+      "state": "accepted",
+      "target_activation_id": "activation-p2-review-claude",
+      "target_substrate_id": "claude-wsl-p2"
+    }
+  ],
+  "lineage": {
+    "head": {
+      "created_at": "2026-08-08T22:46:18.973874Z",
+      "event_type": "handoff_accepted",
+      "revision_id": "revision-bef3f88a520e4f8ea5f63b68d9ff387f"
+    },
+    "lineage_id": "torc-dev",
+    "status": "active"
+  },
+  "relationships": {
+    "branch_origin": null,
+    "child_lineages": []
+  },
+  "report_kind": "lineage_explanation",
+  "schema_version": 1,
+  "trusted": true,
+  "verification": {
+    "artifacts_checked": 2,
+    "errors": [],
+    "lineages_checked": [
+      "torc-dev"
+    ],
+    "schema_version": 1,
+    "valid": true
+  },
+  "warnings": []
+}

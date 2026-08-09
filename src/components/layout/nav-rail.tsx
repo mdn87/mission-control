@@ -50,6 +50,7 @@ const navGroups: NavGroup[] = [
       { id: 'exec-approvals', label: 'Approvals', icon: <ApprovalsIcon />, priority: false },
       { id: 'office', label: 'Office', icon: <OfficeIcon />, priority: false },
       { id: 'monitor', label: 'Monitor', icon: <MonitorIcon />, priority: false },
+      { id: 'lineage', label: 'Lineage', icon: <LineageIcon />, priority: false },
     ],
   },
   {
@@ -1531,6 +1532,19 @@ function PluginIcon() {
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M6 2v3M10 2v3M4 5h8a1 1 0 011 1v7a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" />
       <circle cx="8" cy="10" r="1.5" />
+    </svg>
+  )
+}
+
+function LineageIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="4" cy="3.5" r="1.75" />
+      <circle cx="4" cy="12.5" r="1.75" />
+      <circle cx="12" cy="8" r="1.75" />
+      <path d="M4 5.25v5.5" />
+      <path d="M5.6 4.6 10.5 7.2" />
+      <path d="M5.6 11.4 10.5 8.8" />
     </svg>
   )
 }

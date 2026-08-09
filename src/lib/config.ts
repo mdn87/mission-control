@@ -96,6 +96,12 @@ export const config = {
   openclawConfigPath,
   openclawBin: process.env.OPENCLAW_BIN || resolveDefaultCliBin('openclaw'),
   clawdbotBin: process.env.CLAWDBOT_BIN || resolveDefaultCliBin('clawdbot'),
+  // Read-only TORC lineage view. Empty stateRoot means the feature is OFF.
+  lugosToolCallBin: process.env.LUGOS_TOOL_CALL_BIN || 'lugos-tool-call',
+  torcStateRoot: process.env.LUGOS_TORC_STATE_ROOT || '',
+  // Stubbed lineage index: "lineage:stateDir[:label]" entries, comma separated.
+  // TORC has no enumerate-lineages contract yet, so this list is operator-supplied.
+  torcLineages: (process.env.LUGOS_TORC_LINEAGES || '').trim(),
   gatewayHost: process.env.OPENCLAW_GATEWAY_HOST || '127.0.0.1',
   gatewayPort: clampInt(Number(process.env.OPENCLAW_GATEWAY_PORT || '18789'), 1, 65535, 18789),
   logsDir:
