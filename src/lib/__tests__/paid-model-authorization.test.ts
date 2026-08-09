@@ -19,13 +19,13 @@ function budgets(overrides: Partial<ModelBudgets['lanes'][number]> = {}): ModelB
     lanes: [
       {
         id: 'deepseek', label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA',
-        paid: true, maxBudgetUsd: 2, spendUsd: 0.25, remainingUsd: 1.75,
+        paid: true, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 0.25, remainingUsd: 1.75,
         percentUsed: 12.5, budgetDuration: '30d', resetAt: null, status: 'healthy',
         ...overrides,
       },
       {
         id: 'grok', label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI',
-        paid: true, maxBudgetUsd: 2, spendUsd: 0.5, remainingUsd: 1.5,
+        paid: true, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 0.5, remainingUsd: 1.5,
         percentUsed: 25, budgetDuration: '30d', resetAt: null, status: 'healthy',
       },
     ],
@@ -36,9 +36,9 @@ describe('paid chat model authorization', () => {
   it('keeps empty and explicit local selections on the default route', async () => {
     const loadBudgets = vi.fn()
     await expect(authorizeChatModelRequest({ model: '', paidModelConfirmed: false, loadBudgets }))
-      .resolves.toEqual({ paidModel: null })
+      .resolves.toEqual({ paidModel: null, budget: null })
     await expect(authorizeChatModelRequest({ model: LOCAL_CHAT_MODEL, paidModelConfirmed: false, loadBudgets }))
-      .resolves.toEqual({ paidModel: null })
+      .resolves.toEqual({ paidModel: null, budget: null })
     expect(loadBudgets).not.toHaveBeenCalled()
   })
 
@@ -53,11 +53,15 @@ describe('paid chat model authorization', () => {
   })
 
   it('authorizes an approved paid lane with a fresh remaining budget', async () => {
+    const snapshot = budgets()
     await expect(authorizeChatModelRequest({
       model: DEEPSEEK_CHAT_MODEL,
       paidModelConfirmed: true,
-      loadBudgets: async () => budgets(),
-    })).resolves.toEqual({ paidModel: DEEPSEEK_CHAT_MODEL })
+      loadBudgets: async () => snapshot,
+    })).resolves.toEqual({
+      paidModel: DEEPSEEK_CHAT_MODEL,
+      budget: { generatedAt: snapshot.generatedAt, lane: snapshot.lanes[0] },
+    })
   })
 
   it('blocks exhausted, stale, unavailable, and unapproved paid routes', async () => {

@@ -21,12 +21,12 @@ const modelBudgets = {
   lanes: [
     {
       id: 'deepseek' as const, label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA',
-      paid: true as const, maxBudgetUsd: 2, spendUsd: 0, remainingUsd: 2,
+      paid: true as const, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 0, remainingUsd: 2,
       percentUsed: 0, budgetDuration: '30d' as const, resetAt: null, status: 'healthy' as const,
     },
     {
       id: 'grok' as const, label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI',
-      paid: true as const, maxBudgetUsd: 2, spendUsd: 0, remainingUsd: 2,
+      paid: true as const, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 0, remainingUsd: 2,
       percentUsed: 0, budgetDuration: '30d' as const, resetAt: null, status: 'healthy' as const,
     },
   ],

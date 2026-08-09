@@ -12,12 +12,14 @@ const {
   openOperatorEventStreamMock,
   sendOperatorCommandMock,
   fetchOperatorModelBudgetsMock,
+  observePaidModelBudgetsMock,
 } = vi.hoisted(() => ({
   requireRoleMock: vi.fn(),
   fetchOperatorSnapshotMock: vi.fn(),
   openOperatorEventStreamMock: vi.fn(),
   sendOperatorCommandMock: vi.fn(),
   fetchOperatorModelBudgetsMock: vi.fn(),
+  observePaidModelBudgetsMock: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ requireRole: requireRoleMock }))
@@ -26,6 +28,9 @@ vi.mock('@/integrations/lugos/operator-client', () => ({
   openOperatorEventStream: openOperatorEventStreamMock,
   sendOperatorCommand: sendOperatorCommandMock,
   fetchOperatorModelBudgets: fetchOperatorModelBudgetsMock,
+}))
+vi.mock('@/lib/paid-model-observability', () => ({
+  observePaidModelBudgets: observePaidModelBudgetsMock,
 }))
 
 import { GET as getSnapshot } from '@/app/api/lugos/snapshot/route'
@@ -48,8 +53,8 @@ describe('Mission Control Lugos route boundary', () => {
       staleAfterSeconds: 120,
       defaultModel: LOCAL_CHAT_MODEL,
       lanes: [
-        { id: 'deepseek', label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA', paid: true, maxBudgetUsd: 2, spendUsd: 0, remainingUsd: 2, percentUsed: 0, budgetDuration: '30d', resetAt: null, status: 'healthy' },
-        { id: 'grok', label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI', paid: true, maxBudgetUsd: 2, spendUsd: 0, remainingUsd: 2, percentUsed: 0, budgetDuration: '30d', resetAt: null, status: 'healthy' },
+        { id: 'deepseek', label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA', paid: true, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 0, remainingUsd: 2, percentUsed: 0, budgetDuration: '30d', resetAt: null, status: 'healthy' },
+        { id: 'grok', label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI', paid: true, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 0, remainingUsd: 2, percentUsed: 0, budgetDuration: '30d', resetAt: null, status: 'healthy' },
       ],
     })
   })
@@ -106,6 +111,7 @@ describe('Mission Control Lugos route boundary', () => {
     expect(response.status).toBe(200)
     expect(requireRoleMock).toHaveBeenCalledWith(expect.any(Request), 'operator')
     expect(fetchOperatorModelBudgetsMock).toHaveBeenCalledOnce()
+    expect(observePaidModelBudgetsMock).toHaveBeenCalledOnce()
 
     requireRoleMock.mockReturnValue({ error: 'Requires operator role or higher', status: 403 })
     const denied = await getModelBudgets(new Request('http://localhost/api/lugos/model-budgets'))

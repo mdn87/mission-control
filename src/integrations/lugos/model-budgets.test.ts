@@ -15,8 +15,8 @@ const fixture = {
   staleAfterSeconds: 120,
   defaultModel: LOCAL_CHAT_MODEL,
   lanes: [
-    { id: 'deepseek', label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA', paid: true, maxBudgetUsd: 2, spendUsd: 1, remainingUsd: 1, percentUsed: 50, budgetDuration: '30d', resetAt: null, status: 'watch' },
-    { id: 'grok', label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI', paid: true, maxBudgetUsd: 2, spendUsd: 1.6, remainingUsd: 0.4, percentUsed: 80, budgetDuration: '30d', resetAt: null, status: 'warning' },
+    { id: 'deepseek', label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA', paid: true, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 1, remainingUsd: 1, percentUsed: 50, budgetDuration: '30d', resetAt: null, status: 'watch' },
+    { id: 'grok', label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI', paid: true, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 1.6, remainingUsd: 0.4, percentUsed: 80, budgetDuration: '30d', resetAt: null, status: 'warning' },
   ],
 }
 

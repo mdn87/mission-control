@@ -14,8 +14,8 @@ function freshBudgets() {
     staleAfterSeconds: 120,
     defaultModel: LOCAL_CHAT_MODEL,
     lanes: [
-      { id: 'deepseek', label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA', paid: true, maxBudgetUsd: 2, spendUsd: 0.25, remainingUsd: 1.75, percentUsed: 12.5, budgetDuration: '30d', resetAt: null, status: 'healthy' },
-      { id: 'grok', label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI', paid: true, maxBudgetUsd: 2, spendUsd: 1.6, remainingUsd: 0.4, percentUsed: 80, budgetDuration: '30d', resetAt: null, status: 'warning' },
+      { id: 'deepseek', label: 'DeepSeek', model: DEEPSEEK_CHAT_MODEL, provider: 'NVIDIA', paid: true, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 0.25, remainingUsd: 1.75, percentUsed: 12.5, budgetDuration: '30d', resetAt: null, status: 'healthy' },
+      { id: 'grok', label: 'Grok', model: GROK_CHAT_MODEL, provider: 'xAI', paid: true, maxBudgetUsd: 2, maxOutputTokens: 2048, spendUsd: 1.6, remainingUsd: 0.4, percentUsed: 80, budgetDuration: '30d', resetAt: null, status: 'warning' },
     ],
   }
 }
@@ -41,6 +41,7 @@ describe('ChatInput paid-model controls', () => {
 
     expect(onSend).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog', { name: 'Confirm paid DeepSeek request' })).toBeInTheDocument()
+    expect(screen.getByText('2,048 tokens')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Use DeepSeek' }))
 
     expect(onSend).toHaveBeenCalledWith('Use the paid lane', undefined, {

@@ -314,6 +314,12 @@ export function ChatInput({ onSend, onAbort, disabled, agents = [], isGenerating
                 <span className="text-muted-foreground">Budget window</span>
                 <span className="text-foreground">Rolling {selectedPaidLane.budgetDuration}</span>
               </div>
+              <div className="mt-1 flex justify-between gap-4">
+                <span className="text-muted-foreground">Maximum output</span>
+                <span className="text-foreground">
+                  {selectedPaidLane.maxOutputTokens.toLocaleString('en-US')} tokens
+                </span>
+              </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setConfirmPaidSend(false)}>

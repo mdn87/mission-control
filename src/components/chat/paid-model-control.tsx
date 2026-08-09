@@ -78,7 +78,7 @@ export function PaidModelControl({
         <span
           key={lane.id}
           className={`rounded border px-2 py-1 text-[10px] ${STATUS_STYLES[lane.status]}`}
-          title={`${lane.percentUsed.toFixed(1)}% of ${formatUsd(lane.maxBudgetUsd)} used · rolling ${lane.budgetDuration}`}
+          title={`${lane.percentUsed.toFixed(1)}% of ${formatUsd(lane.maxBudgetUsd)} used · rolling ${lane.budgetDuration} · max ${lane.maxOutputTokens.toLocaleString('en-US')} output tokens`}
         >
           {lane.label} {formatUsd(lane.remainingUsd)} left
           {lane.status === 'watch' && ' · 50% watch'}
