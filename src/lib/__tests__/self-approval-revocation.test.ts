@@ -88,7 +88,7 @@ describe('a user cannot approve themselves', () => {
 })
 
 describe('a user cannot approve their own access request', () => {
-  async function loadApprovalRoute(admin: Record<string, unknown>, reqEmail: string, selfRowMatches: boolean) {
+  async function loadApprovalRoute(admin: Record<string, unknown>, reqEmail: string, resolvesToId: number | null) {
     vi.resetModules()
     const run = vi.fn()
     vi.doMock('@/lib/auth', () => ({
@@ -101,7 +101,8 @@ describe('a user cannot approve their own access request', () => {
         prepare: vi.fn((sql: string) => ({
           get: vi.fn(() => {
             if (sql.includes('FROM access_requests')) return { id: 1, email: reqEmail, status: 'pending' }
-            if (sql.includes('AND id = ?')) return selfRowMatches ? { id: 9 } : undefined
+            // The guard's own lookup: email OR provider identity.
+            if (sql.includes('provider_user_id = ?')) return resolvesToId ? { id: resolvesToId } : undefined
             return undefined
           }),
           run,
@@ -129,7 +130,19 @@ describe('a user cannot approve their own access request', () => {
     // The bypass: an unapproved admin fails a Google login to create a pending
     // request, then approves it, which sets is_approved = 1 without ever going
     // through the guard on PUT /api/auth/users.
-    const { route, run } = await loadApprovalRoute(revokedAdmin, 'revoked@example.com', true)
+    const { route, run } = await loadApprovalRoute(revokedAdmin, 'revoked@example.com', 9)
+
+    const response = await route.POST({ json: async () => ({}), headers: new Headers() } as never)
+
+    expect(response.status).toBe(400)
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('refuses when only the provider identity resolves to the acting admin', async () => {
+    // The bypass an email-only guard missed: the admin's email changed, so the
+    // request carries a different address, but the stable provider_user_id still
+    // resolves to their existing row and the approval would reapprove it.
+    const { route, run } = await loadApprovalRoute(revokedAdmin, 'new-address@example.com', 9)
 
     const response = await route.POST({ json: async () => ({}), headers: new Headers() } as never)
 
@@ -138,7 +151,7 @@ describe('a user cannot approve their own access request', () => {
   })
 
   it('still allows approving a request for someone else', async () => {
-    const { route } = await loadApprovalRoute(revokedAdmin, 'someone-else@example.com', false)
+    const { route } = await loadApprovalRoute(revokedAdmin, 'someone-else@example.com', 42)
 
     const response = await route.POST({ json: async () => ({}), headers: new Headers() } as never)
 

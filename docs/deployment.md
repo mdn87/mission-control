@@ -405,9 +405,9 @@ configuration is part of the security boundary.
 > treated a key as proof of anything. When assessing a leaked secret or a
 > directly reachable backend, assume the whole surface is exposed.
 >
-> **The gateway's identity does not always win.** If the header names someone
-> unknown or unapproved — a renamed account, or a new one with
-> `MC_PROXY_AUTH_DEFAULT_ROLE` unset — route auth does not stop there. It falls
+> **The gateway's identity does not always win.** If route auth cannot resolve
+> the name — an existing *unapproved* account always, or a renamed or unknown one
+> when `MC_PROXY_AUTH_DEFAULT_ROLE` is unset — it does not stop there. It falls
 > through to the session cookie and API key, so a user whose upstream identity
 > changed can still be authenticated as their *old* account by a cookie that has
 > not expired.

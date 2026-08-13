@@ -55,7 +55,7 @@ architectural: 89 mutation handlers under `src/app/api` match the shape
 call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
 `await request.json()`).
 
-Most merely let a revoked user complete one more write. **Six grant access that
+Most merely let a revoked user complete one more write. **Eight grant access that
 survives account deletion**, which is what makes the shape a revocation problem
 rather than an ordinary race:
 
@@ -97,8 +97,9 @@ problem 1 and not for the deletion workaround.
 
 ### What this list is not
 
-The count went 2 → 5 → 9 → 6 across successive passes. The nine was wrong in
-both directions, and the errors are worth recording so the next reader calibrates
+The count went 2 → 5 → 9 → 6 → 7 → 8 across successive passes, every step of it
+prompted by review rather than by my own checking. The nine was wrong in both
+directions, and the errors are worth recording so the next reader calibrates
 against them rather than the number:
 
 - `POST /api/tokens/rotate` was counted as a body-stall race and is not one: it
@@ -120,7 +121,7 @@ against them rather than the number:
 
 The scan keyed on `createUser`/`createSession`/`hashApiKey`/`randomBytes`/
 `INSERT INTO` and similar, so a route granting persistence by other means would
-not appear. Treat six as the current floor, not a total.
+not appear. Treat eight as the current floor, not a total.
 
 ## Current workaround
 
@@ -209,7 +210,7 @@ so there is no state difference to detect even in principle. Disclosure is
 unobservable after the fact, which makes rotation the only sound response and an
 audit event the only way to know it is needed.
 
-Add audit events for all four, and sweep the remaining credential-issuing routes
+Add audit events for all five, and sweep the remaining credential-issuing routes
 for the same gap — each of these was found by testing a documentation claim, not
 by a deliberate audit-coverage review.
 

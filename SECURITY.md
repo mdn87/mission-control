@@ -126,15 +126,16 @@ comes after the deletion and restart below, because rotating while the account
 still holds a live session lets the target rotate again and read the
 replacement.
 
-**Deletion is still not complete.** Every mutation route authenticates at the
-top of the handler and only then awaits the request body, so a request begun
-before the deletion carries an authorization decision that deletion cannot
-cancel. Eight such routes grant access that outlives it: a new approved admin, an
-approved access request, an agent API key, a webhook aimed at an attacker's URL,
-an OpenClaw cron job, a paired gateway device with its own token, a host OS
-account, and the gateway bearer credential.
+**Deletion is still not complete.** Most mutation routes authenticate at the top
+of the handler and only then await the request body — 89 of them, though a few
+such as `POST /api/tokens/rotate` read no body at all — so a request begun before
+the deletion carries an authorization decision that deletion cannot cancel. Eight
+of those routes grant access that outlives it: a new approved admin, an approved
+access request, an agent API key, a webhook aimed at an attacker's URL, an
+OpenClaw cron job, a paired gateway device with its own token, a host OS account,
+and the gateway bearer credential.
 
-**Three of those leave the application**, and nothing done inside Mission Control
+**Four of those leave the application**, and nothing done inside Mission Control
 undoes any of them. Where the process has passwordless sudo for `useradd`,
 `POST /api/super/os-users` creates a **host OS account** (the requested password
 is applied by a separate `chpasswd` call whose failure is ignored, so without
@@ -142,7 +143,9 @@ that privilege too the account exists with no usable password).
 `POST /api/gateways/connect` returns the **real gateway bearer credential** to
 operator+ callers, which authenticates to the separate OpenClaw gateway.
 `POST /api/cron` writes an **enabled OpenClaw cron job** with an attacker-chosen
-schedule and agent-turn message, which keeps running afterwards.
+schedule and agent-turn message, which keeps running afterwards. `POST /api/nodes`
+approves a **gateway device pairing**, and the paired device holds its own token —
+revoke it at the gateway, since deleting the Mission Control user does not.
 
 **Cut the in-flight requests before rotating anything.** There is no per-user
 request registry and no drain check, so "wait for requests to finish" is not
