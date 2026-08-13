@@ -168,19 +168,42 @@ Disable the scheduler as a whole rather than picking jobs — the list above is
 what review has found, and this document has been wrong about every enumeration
 it has attempted.
 
+**There is no supported way to keep it disabled.** `initScheduler()` runs
+unconditionally on runtime startup (`src/lib/db.ts:80-87`), `stopScheduler()` is
+an in-memory function with no route and no persistent setting, so any start of
+Mission Control re-arms all twelve jobs. That is why the containment steps below
+come *before* the process is started again, and why the rotation — which needs
+the process running — is the last thing done under isolation.
+
 OpenClaw runs a **second scheduler** for the `cron/jobs.json` jobs that
 `POST /api/cron` writes. It survives Mission Control being stopped *and* the
 ingress isolation, because it is on the other side of the boundary. Stop it, or
 quarantine suspect jobs, now — reviewing that file afterwards is too late, since
 the jobs run throughout everything below.
 
-**Step 2 — stop Mission Control, and verify the deployed revision before
+**Step 2 — cancel work already accepted outside Mission Control.** This has to
+happen before the process is started again, because starting it re-arms the
+scheduler. Three executors act independently of Mission Control:
+
+- **The gateway.** Many routes dispatch to it — `spawn`, `wake`, `broadcast`,
+  `chat/messages`, `agents/message`, `pipelines/run` and others; a dozen route
+  files reference gateway calls, so treat those as examples rather than a list.
+  Ask the gateway what is running rather than working through routes. Also stop
+  any gateway process started by `gateways/control`.
+- **The provisioner daemon**, on super-admin deployments with live provisioning.
+  `POST /api/super/provision-jobs/[id]/run` sends privileged steps over
+  `/run/mc-provisioner.sock` and the daemon spawns the host command itself, so
+  stopping Mission Control closes the client and not the work. Inspect it and
+  cancel active jobs.
+- **OpenClaw's cron scheduler**, already stopped in step 1.
+
+**Step 3 — stop Mission Control, and verify the deployed revision before
 starting it again.** A stalled `POST /api/releases/update` can leave an older or
 partially built revision on disk, and everything after this would then run under
 that build. Stopping the process is also the only thing that ends handlers
 authorized before isolation; until it happens, nothing below stays done.
 
-**Step 3 — now clean up, with nothing running.**
+**Step 4 — now clean up, with nothing running.**
 
 1. Delete the target's account, and every account whose credentials they created,
    reset, or saw. `POST /api/auth/users` takes a caller-chosen password, so a
@@ -192,18 +215,13 @@ authorized before isolation; until it happens, nothing below stays done.
    only on `enabled` and workspace.
 4. Disable or remove any host account created during the window.
 
-**Step 4 — rotate, still isolated.** The global key via `POST /api/tokens/rotate`
+**Step 5 — rotate, still isolated.** This is the one step that needs the process
+running, which is why it is last: starting it re-arms the scheduler, so
+everything above must already be done. The global key via `POST /api/tokens/rotate`
 (editing `API_KEY` is not a rotation where a `settings.security.api_key_hash` row
 exists — that row wins until deleted), then **every registered gateway's**
 credential, not just the primary: `POST /api/gateways/connect` serves any
 registered id to operator+ callers.
-
-**Step 5 — cancel work the gateway has already accepted.** Many routes dispatch
-to it — `spawn`, `wake`, `broadcast`, `chat/messages`, `agents/message`,
-`pipelines/run` and others; a dozen route files reference gateway calls, so treat
-those names as examples rather than a list. Anything the gateway accepted keeps
-running regardless of what happens to Mission Control, so it has to be stopped at
-the gateway. Also stop any gateway process started by `gateways/control`.
 
 **Only then lift the isolation**, and re-check the account and task tables once
 more — if any handler survived the restart, this is where it shows.

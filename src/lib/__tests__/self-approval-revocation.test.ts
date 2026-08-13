@@ -162,6 +162,22 @@ describe('a user cannot approve their own access request', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
+  it('refuses when the acting admin is a proxy user whose username is the request email', async () => {
+    // resolveOrProvisionProxyUser creates auto-provisioned users with no email and
+    // no provider identity, so the address lives only in `username`. Checking
+    // email and provider alone misses them.
+    const proxyAdmin = {
+      id: 9, username: 'revoked@example.com', role: 'admin', email: null,
+      workspace_id: 1, tenant_id: 1, is_approved: 0,
+    }
+    const { route, run } = await loadApprovalRoute(proxyAdmin, 'revoked@example.com', null)
+
+    const response = await route.POST({ json: async () => ({}), headers: new Headers() } as never)
+
+    expect(response.status).toBe(400)
+    expect(run).not.toHaveBeenCalled()
+  })
+
   it('still allows approving a request for someone else', async () => {
     const { route } = await loadApprovalRoute(revokedAdmin, 'someone-else@example.com', 42)
 

@@ -106,9 +106,17 @@ export async function POST(request: NextRequest) {
   // email changed still resolves to their existing row by a stable
   // provider_user_id and would slip past an email-only check.
   const wouldResolveTo = db.prepare(
-    'SELECT id FROM users WHERE lower(email) = ? OR (provider = ? AND provider_user_id = ?) ORDER BY id ASC LIMIT 1'
-  ).get(email, 'google', providerUserId || '') as { id: number } | undefined
-  if (wouldResolveTo?.id === admin.id || (admin.email || '').toLowerCase() === email) {
+    'SELECT id FROM users WHERE lower(email) = ? OR lower(username) = ? OR (provider = ? AND provider_user_id = ?) ORDER BY id ASC LIMIT 1'
+  ).get(email, email, 'google', providerUserId || '') as { id: number } | undefined
+  // `username` is matched too: resolveOrProvisionProxyUser creates auto-provisioned
+  // users with `createUser(username, ..., username, role)` and no email or provider
+  // identity, so a proxy user whose username *is* their address has it in that
+  // column alone and would slip past a check on email and provider only.
+  if (
+    wouldResolveTo?.id === admin.id
+    || (admin.email || '').toLowerCase() === email
+    || (admin.username || '').toLowerCase() === email
+  ) {
     return NextResponse.json(
       { error: 'Cannot approve an access request for your own account' },
       { status: 400 },

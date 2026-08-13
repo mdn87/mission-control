@@ -465,7 +465,11 @@ configuration is part of the security boundary.
 > the sync and heartbeat jobs talk to the gateway. Disable the scheduler as a
 > whole rather than picking jobs. OpenClaw runs a second scheduler of its own for
 > `cron/jobs.json`, which survives Mission Control being stopped and the isolation
-> alike — stop it or quarantine suspect jobs now.
+> alike — stop it or quarantine suspect jobs now. Note there is **no supported way
+> to keep Mission Control's scheduler disabled**: `initScheduler()` runs
+> unconditionally at startup and `stopScheduler()` has no route, so any start
+> re-arms all twelve jobs. That is why the rotation, which needs the process
+> running, comes last.
 >
 > **2. Stop Mission Control and verify the deployed revision** before starting it
 > again — a stalled `POST /api/releases/update` can leave an altered build on disk,
@@ -480,11 +484,14 @@ configuration is part of the security boundary.
 > (editing `API_KEY` is not a rotation where a `settings.security.api_key_hash`
 > row exists), then every registered gateway's credential — `gateways/connect`
 > serves any registered id.
-> **5. Cancel work the gateway already accepted.** Many routes dispatch to it —
-> `spawn`, `wake`, `broadcast`, `chat/messages`, `agents/message`,
-> `pipelines/run` and others — so treat those as examples, not a list. Also stop
-> any gateway process started by `gateways/control`. Restarting Mission Control
-> retracts none of it.
+> **Cancel work already accepted outside Mission Control — before restarting it,
+> since starting re-arms the scheduler.** Three executors act on their own: the
+> gateway (many routes dispatch to it — `spawn`, `wake`, `broadcast`,
+> `chat/messages`, `agents/message`, `pipelines/run` and others, so ask the
+> gateway rather than working through a list), any gateway process started by
+> `gateways/control`, and on super-admin deployments the provisioner daemon,
+> which spawns host commands over `/run/mc-provisioner.sock` and does not stop
+> when Mission Control does.
 >
 > Only then lift the isolation, and re-check the account and task tables once more.
 >

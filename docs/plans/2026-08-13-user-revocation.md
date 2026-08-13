@@ -229,6 +229,20 @@ involved.
 Any revocation operation must revoke that user's agent keys, and the UI needs a
 way to see which keys a given user created.
 
+## Phase 1d: the scheduler cannot be kept disabled
+
+`initScheduler()` runs unconditionally on runtime startup (`src/lib/db.ts:80-87`)
+and `stopScheduler()` (`src/lib/scheduler.ts:557-562`) is an in-memory function
+with no route and no persistent setting. An operator therefore cannot start
+Mission Control with its twelve scheduled jobs held off, which is what the
+documented response needs in order to rotate credentials without re-arming
+`aegis_review`, `webhook_retry` and the sync jobs mid-containment.
+
+A scheduler-disabled startup mode — env flag or maintenance mode — would remove
+the ordering constraint the current documentation works around. It is the same
+class of gap as problem 1: the procedure needs a primitive the product does not
+expose.
+
 ## Phase 1c: what a revocation procedure has to cover
 
 Review of the documented procedure — as opposed to the route list — found four
@@ -248,6 +262,10 @@ All four are design requirements for Phase 2, not documentation problems:
   20 seconds after startup (`src/lib/scheduler.ts:368,386`), so restarting with
   the target's assigned or recurring tasks still queued executes attacker-authored
   prompts through the gateway, provider APIs or host CLIs — during the procedure.
+- **A third independent executor: the provisioner daemon.** On super-admin
+  deployments, `POST /api/super/provision-jobs/[id]/run` sends privileged steps
+  over `/run/mc-provisioner.sock`; the daemon spawns the host command itself, so
+  stopping Mission Control closes the client and not the work.
 - **Multi-gateway deployments need every credential rotated.**
   `POST /api/gateways/connect` serves any registered gateway id to operator+
   callers; only the primary uses the detected OpenClaw credential.
