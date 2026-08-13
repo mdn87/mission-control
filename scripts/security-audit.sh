@@ -70,6 +70,10 @@ if [[ -f "$ENV_FILE" ]]; then
       MC_COOKIE_SAMESITE) MC_COOKIE_SAMESITE="$value" ;;
       MC_ENABLE_HSTS) MC_ENABLE_HSTS="$value" ;;
       MC_DISABLE_RATE_LIMIT) MC_DISABLE_RATE_LIMIT="$value" ;;
+      MC_PROXY_AUTH_HEADER) MC_PROXY_AUTH_HEADER="$value" ;;
+      MC_PROXY_AUTH_SECRET) MC_PROXY_AUTH_SECRET="$value" ;;
+      MC_PROXY_AUTH_TRUSTED_IPS) MC_PROXY_AUTH_TRUSTED_IPS="$value" ;;
+      MC_PROXY_AUTH_DEFAULT_ROLE) MC_PROXY_AUTH_DEFAULT_ROLE="$value" ;;
     esac
   done < "$ENV_FILE"
 fi
@@ -136,7 +140,33 @@ if [[ "$MC_ANY" == "1" || "$MC_ANY" == "true" ]]; then
 elif [[ -n "$MC_ALLOWED" ]]; then
   pass "MC_ALLOWED_HOSTS is configured: $MC_ALLOWED"
 else
-  warn "MC_ALLOWED_HOSTS is not set (defaults apply)"
+  fail "MC_ALLOWED_HOSTS is not set (production serves only localhost/::1/hostname; every other host gets 403)"
+fi
+
+# 3b. Trusted reverse proxy authentication
+PROXY_HEADER="${MC_PROXY_AUTH_HEADER:-}"
+PROXY_SECRET="${MC_PROXY_AUTH_SECRET:-}"
+PROXY_TRUSTED="${MC_PROXY_AUTH_TRUSTED_IPS:-}"
+PROXY_DEFAULT_ROLE="${MC_PROXY_AUTH_DEFAULT_ROLE:-}"
+if [[ -z "$PROXY_HEADER" ]]; then
+  info "MC_PROXY_AUTH_HEADER is not set (header-based proxy auth disabled)"
+else
+  if [[ ${#PROXY_SECRET} -ge 32 ]]; then
+    pass "MC_PROXY_AUTH_SECRET is at least 32 characters"
+  else
+    fail "MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is missing or under 32 characters (proxy auth disabled)"
+  fi
+  if [[ -n "$PROXY_TRUSTED" ]]; then
+    pass "MC_PROXY_AUTH_TRUSTED_IPS is configured: $PROXY_TRUSTED"
+  else
+    fail "MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_TRUSTED_IPS is empty (proxy auth disabled)"
+  fi
+  if [[ -n "$PROXY_DEFAULT_ROLE" ]]; then
+    warn "MC_PROXY_AUTH_DEFAULT_ROLE=$PROXY_DEFAULT_ROLE auto-provisions accounts for unknown proxy identities"
+  fi
+  # Cannot be checked from here — it lives in the reverse proxy configuration —
+  # but it is the control the whole scheme depends on, so always say it.
+  info "Verify the proxy strips client-supplied $PROXY_HEADER, X-MC-Proxy-Secret, X-Forwarded-For, and X-Real-IP headers before injecting its own"
 fi
 
 # 4. Cookie/HTTPS config

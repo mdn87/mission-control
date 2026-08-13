@@ -77,11 +77,12 @@ describe('trusted proxy header authentication', () => {
     expect(result).toEqual({ error: 'Authentication required', status: 401 })
   })
 
-  it('accepts the configured proxy identity only with the matching attestation secret', async () => {
+  it('accepts the configured proxy identity with both the attestation secret and a trusted peer', async () => {
     const { requireRole } = await loadAuth()
     const request = new Request('http://localhost/api/auth/users', {
       headers: {
         'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef',
+        'x-real-ip': '127.0.0.1',
         'x-user-email': 'admin',
       },
     })
@@ -92,12 +93,61 @@ describe('trusted proxy header authentication', () => {
     expect(result.user?.role).toBe('admin')
   })
 
+  it('rejects a valid attestation secret presented from an untrusted peer address', async () => {
+    const { requireRole } = await loadAuth()
+    const request = new Request('http://localhost/api/auth/users', {
+      headers: {
+        'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef',
+        'x-real-ip': '203.0.113.9',
+        'x-user-email': 'admin',
+      },
+    })
+
+    const result = requireRole(request, 'admin')
+
+    expect(result).toEqual({ error: 'Authentication required', status: 401 })
+  })
+
+  it('rejects a same-length but incorrect attestation secret from a trusted peer', async () => {
+    const { requireRole } = await loadAuth()
+    const request = new Request('http://localhost/api/auth/users', {
+      headers: {
+        // Same length as the configured secret, so the length guard cannot
+        // short-circuit and the constant-time comparison is what rejects it.
+        'x-mc-proxy-secret': 'fedcba9876543210fedcba9876543210',
+        'x-real-ip': '127.0.0.1',
+        'x-user-email': 'admin',
+      },
+    })
+
+    const result = requireRole(request, 'admin')
+
+    expect(result).toEqual({ error: 'Authentication required', status: 401 })
+  })
+
   it('fails closed when proxy authentication is configured with a short secret', async () => {
     process.env.MC_PROXY_AUTH_SECRET = 'too-short'
     const { requireRole } = await loadAuth()
     const request = new Request('http://localhost/api/auth/users', {
       headers: {
         'x-mc-proxy-secret': 'too-short',
+        'x-real-ip': '127.0.0.1',
+        'x-user-email': 'admin',
+      },
+    })
+
+    const result = requireRole(request, 'admin')
+
+    expect(result).toEqual({ error: 'Authentication required', status: 401 })
+  })
+
+  it('fails closed when no trusted proxy addresses are configured', async () => {
+    delete process.env.MC_PROXY_AUTH_TRUSTED_IPS
+    const { requireRole } = await loadAuth()
+    const request = new Request('http://localhost/api/auth/users', {
+      headers: {
+        'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef',
+        'x-real-ip': '127.0.0.1',
         'x-user-email': 'admin',
       },
     })

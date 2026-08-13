@@ -2,25 +2,58 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto'
 import { getDatabase } from './db'
 import { hashPassword, verifyPassword, verifyPasswordWithRehashCheck } from './password'
 import { logSecurityEvent } from './security-events'
+import { extractClientIpFromTrusted } from './request'
 import { parseMcSessionCookieHeader } from './session-cookie'
 
 const PROXY_AUTH_SECRET_HEADER = 'x-mc-proxy-secret'
 const MIN_PROXY_AUTH_SECRET_LENGTH = 32
 
-// Log once at startup if proxy auth is misconfigured.
+// Read at call time rather than module load so the value is not captured before
+// the process environment is fully populated; the parsed Set is cached per value.
+let _proxyAuthTrustedIps: { raw: string; ips: Set<string> } | null = null
+function getProxyAuthTrustedIps(): Set<string> {
+  const raw = process.env.MC_PROXY_AUTH_TRUSTED_IPS || ''
+  if (!_proxyAuthTrustedIps || _proxyAuthTrustedIps.raw !== raw) {
+    _proxyAuthTrustedIps = {
+      raw,
+      ips: new Set(raw.split(',').map(s => s.trim()).filter(Boolean)),
+    }
+  }
+  return _proxyAuthTrustedIps.ips
+}
+
+// Log once per distinct reason if proxy auth is misconfigured.
 // Deferred to avoid DB access during module initialization.
-let _proxyAuthMisconfigWarned = false
-function warnProxyAuthMisconfigOnce(): void {
-  if (_proxyAuthMisconfigWarned) return
-  _proxyAuthMisconfigWarned = true
+const _proxyAuthMisconfigWarned = new Set<string>()
+function warnProxyAuthMisconfigOnce(reason: string): void {
+  if (_proxyAuthMisconfigWarned.has(reason)) return
+  _proxyAuthMisconfigWarned.add(reason)
   try {
     logSecurityEvent({
       event_type: 'proxy_auth_misconfigured',
       severity: 'critical',
       source: 'auth',
-      detail: JSON.stringify({
-        reason: `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,
-      }),
+      detail: JSON.stringify({ reason }),
+      workspace_id: 1,
+      tenant_id: 1,
+    })
+  } catch {}
+}
+
+// Someone presenting proxy auth headers that do not verify is worth seeing, but
+// a probe loop must not be able to drive one DB insert per request.
+const PROXY_AUTH_REJECTION_LOG_INTERVAL_MS = 60_000
+let _proxyAuthRejectionLoggedAt = 0
+function logProxyAuthRejection(reason: string): void {
+  const now = Date.now()
+  if (now - _proxyAuthRejectionLoggedAt < PROXY_AUTH_REJECTION_LOG_INTERVAL_MS) return
+  _proxyAuthRejectionLoggedAt = now
+  try {
+    logSecurityEvent({
+      event_type: 'proxy_auth_rejected',
+      severity: 'warning',
+      source: 'auth',
+      detail: JSON.stringify({ reason }),
       workspace_id: 1,
       tenant_id: 1,
     })
@@ -437,18 +470,41 @@ export function getUserFromRequest(request: Request): User | null {
   // When the gateway has already authenticated the user and injects their username
   // as a trusted header (e.g. X-Auth-Username from Envoy OIDC claimToHeaders),
   // skip the local login form entirely.
-  // Requires a high-entropy shared secret that the trusted gateway injects
-  // after stripping any client-supplied identity and attestation headers.
+  // Two independent gates, both required: a high-entropy shared secret that the
+  // gateway injects, and the peer address it reports being one of the configured
+  // trusted proxies. Neither is a substitute for the gateway stripping any
+  // client-supplied identity, attestation, and forwarding headers before adding
+  // its own — both signals are header-derived, so a gateway that forwards client
+  // headers verbatim defeats them together. Missing config fails closed and logs
+  // a critical event on the first request.
   const proxyAuthHeader = (process.env.MC_PROXY_AUTH_HEADER || '').trim()
   if (proxyAuthHeader) {
     const proxyAuthSecret = process.env.MC_PROXY_AUTH_SECRET || ''
+    const trustedIps = getProxyAuthTrustedIps()
     if (proxyAuthSecret.length < MIN_PROXY_AUTH_SECRET_LENGTH) {
-      warnProxyAuthMisconfigOnce()
-    } else if (safeCompare(request.headers.get(PROXY_AUTH_SECRET_HEADER) || '', proxyAuthSecret)) {
-      const proxyUsername = (request.headers.get(proxyAuthHeader) || '').trim()
-      if (proxyUsername) {
-        const user = resolveOrProvisionProxyUser(proxyUsername)
-        if (user) return { ...user, agent_name: agentName }
+      warnProxyAuthMisconfigOnce(
+        `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,
+      )
+    } else if (trustedIps.size === 0) {
+      warnProxyAuthMisconfigOnce(
+        'MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_TRUSTED_IPS is empty — proxy auth disabled',
+      )
+    } else {
+      const presentedSecret = request.headers.get(PROXY_AUTH_SECRET_HEADER) || ''
+      const presentedIdentity = (request.headers.get(proxyAuthHeader) || '').trim()
+      const clientIp = extractClientIpFromTrusted(request, trustedIps, '')
+      const secretMatches = safeCompare(presentedSecret, proxyAuthSecret)
+      const peerIsTrusted = Boolean(clientIp) && trustedIps.has(clientIp)
+
+      if (secretMatches && peerIsTrusted) {
+        if (presentedIdentity) {
+          const user = resolveOrProvisionProxyUser(presentedIdentity)
+          if (user) return { ...user, agent_name: agentName }
+        }
+      } else if (presentedSecret || presentedIdentity) {
+        logProxyAuthRejection(
+          secretMatches ? 'peer address is not a trusted proxy' : 'proxy attestation secret mismatch',
+        )
       }
     }
   }
