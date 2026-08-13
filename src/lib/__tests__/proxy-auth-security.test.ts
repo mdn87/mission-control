@@ -30,20 +30,37 @@ function makeAdminDatabase() {
   }
 }
 
-async function loadAuth() {
-  const database = makeAdminDatabase()
+/** A database in which no user row matches, so proxy identities cannot resolve. */
+function makeEmptyDatabase() {
+  return {
+    prepare: vi.fn((sql: string) => ({
+      get: vi.fn(() => (sql.includes('FROM workspaces') ? { id: 1, tenant_id: 1 } : undefined)),
+    })),
+  }
+}
+
+async function loadAuth(options: { database?: unknown } = {}) {
+  const database = options.database ?? makeAdminDatabase()
+  const logSecurityEvent = vi.fn()
   vi.doMock('@/lib/db', () => ({
     getDatabase: vi.fn(() => database),
   }))
-  vi.doMock('@/lib/security-events', () => ({
-    logSecurityEvent: vi.fn(),
-  }))
+  vi.doMock('@/lib/security-events', () => ({ logSecurityEvent }))
   vi.doMock('@/lib/password', () => ({
     hashPassword: vi.fn((value: string) => `hashed:${value}`),
     verifyPassword: vi.fn(() => false),
     verifyPasswordWithRehashCheck: vi.fn(() => ({ valid: false, needsRehash: false })),
   }))
-  return import('@/lib/auth')
+  const auth = await import('@/lib/auth')
+  return { ...auth, logSecurityEvent }
+}
+
+/** Reasons passed to logSecurityEvent for a given event_type. */
+function rejectionReasons(logSecurityEvent: ReturnType<typeof vi.fn>): string[] {
+  return logSecurityEvent.mock.calls
+    .map(([event]) => event)
+    .filter((event) => event?.event_type === 'proxy_auth_rejected')
+    .map((event) => JSON.parse(event.detail).reason)
 }
 
 describe('trusted proxy header authentication', () => {
@@ -113,6 +130,55 @@ describe('trusted proxy header authentication', () => {
     const { requireRole } = await loadAuth()
     const request = new Request('http://localhost/api/auth/users', {
       headers: { 'x-user-email': 'admin' },
+    })
+
+    const result = requireRole(request, 'admin')
+
+    expect(result).toEqual({ error: 'Authentication required', status: 401 })
+  })
+
+  it('records a rejection when a valid secret carries an identity that cannot be resolved', async () => {
+    // The shape of a leaked-secret probe guessing usernames.
+    const { requireRole, logSecurityEvent } = await loadAuth({ database: makeEmptyDatabase() })
+    const request = new Request('http://localhost/api/auth/users', {
+      headers: {
+        'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef',
+        'x-user-email': 'nobody',
+      },
+    })
+
+    const result = requireRole(request, 'admin')
+
+    expect(result).toEqual({ error: 'Authentication required', status: 401 })
+    expect(rejectionReasons(logSecurityEvent)).toContain(
+      'attested identity did not resolve to an approved user',
+    )
+  })
+
+  it('records a rejection when a valid secret carries no identity header', async () => {
+    const { requireRole, logSecurityEvent } = await loadAuth()
+    const request = new Request('http://localhost/api/auth/users', {
+      headers: { 'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef' },
+    })
+
+    const result = requireRole(request, 'admin')
+
+    expect(result).toEqual({ error: 'Authentication required', status: 401 })
+    expect(rejectionReasons(logSecurityEvent)).toContain(
+      'attested request carried no identity header',
+    )
+  })
+
+  it('fails closed when the secret is still the public .env.example placeholder', async () => {
+    // 42 characters, so it clears the length rule while being published in the repo.
+    const placeholder = 'replace-with-at-least-32-random-characters'
+    process.env.MC_PROXY_AUTH_SECRET = placeholder
+    const { requireRole } = await loadAuth()
+    const request = new Request('http://localhost/api/auth/users', {
+      headers: {
+        'x-mc-proxy-secret': placeholder,
+        'x-user-email': 'admin',
+      },
     })
 
     const result = requireRole(request, 'admin')

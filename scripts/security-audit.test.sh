@@ -74,6 +74,18 @@ if bash "$AUDIT" --env-file "$PROXY_ENV" --strict >/dev/null 2>&1; then
   exit 1
 fi
 
+# The shipped placeholder clears the length rule but is public.
+cat >> "$PROXY_ENV" <<'EOF'
+MC_PROXY_AUTH_SECRET=replace-with-at-least-32-random-characters
+EOF
+placeholder_output="$(bash "$AUDIT" --env-file "$PROXY_ENV" || true)"
+grep -Fq '[FAIL] MC_PROXY_AUTH_SECRET is still the .env.example placeholder' <<< "$placeholder_output"
+if bash "$AUDIT" --env-file "$PROXY_ENV" --strict >/dev/null 2>&1; then
+  echo 'Expected --strict to fail when MC_PROXY_AUTH_SECRET is the shipped placeholder' >&2
+  exit 1
+fi
+
+sed -i.bak '/^MC_PROXY_AUTH_SECRET=/d' "$PROXY_ENV" && rm -f "$PROXY_ENV.bak"
 cat >> "$PROXY_ENV" <<'EOF'
 MC_PROXY_AUTH_SECRET=0123456789abcdef0123456789abcdef
 EOF

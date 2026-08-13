@@ -7,6 +7,12 @@ import { parseMcSessionCookieHeader } from './session-cookie'
 const PROXY_AUTH_SECRET_HEADER = 'x-mc-proxy-secret'
 const MIN_PROXY_AUTH_SECRET_LENGTH = 32
 
+// Values shipped in .env.example. They satisfy the length rule but are public,
+// so treating them as configured would hand the secret to anyone reading the repo.
+const INSECURE_PROXY_AUTH_SECRETS = new Set([
+  'replace-with-at-least-32-random-characters',
+])
+
 // Log once per distinct reason if proxy auth is misconfigured.
 // Deferred to avoid DB access during module initialization.
 const _proxyAuthMisconfigWarned = new Set<string>()
@@ -475,14 +481,24 @@ export function getUserFromRequest(request: Request): User | null {
       warnProxyAuthMisconfigOnce(
         `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,
       )
+    } else if (INSECURE_PROXY_AUTH_SECRETS.has(proxyAuthSecret)) {
+      warnProxyAuthMisconfigOnce(
+        'MC_PROXY_AUTH_SECRET is the placeholder from .env.example, which is public — proxy auth disabled',
+      )
     } else {
       const presentedSecret = request.headers.get(PROXY_AUTH_SECRET_HEADER) || ''
       const presentedIdentity = (request.headers.get(proxyAuthHeader) || '').trim()
 
       if (safeCompare(presentedSecret, proxyAuthSecret)) {
-        if (presentedIdentity) {
+        // Past this point the caller holds the secret, so every way the request
+        // can still fail is worth a rejection event: it is either a probe using
+        // a leaked secret or a gateway sending identities we cannot resolve.
+        if (!presentedIdentity) {
+          logProxyAuthRejection('attested request carried no identity header')
+        } else {
           const user = resolveOrProvisionProxyUser(presentedIdentity)
           if (user) return { ...user, agent_name: agentName }
+          logProxyAuthRejection('attested identity did not resolve to an approved user')
         }
       } else if (presentedSecret || presentedIdentity) {
         logProxyAuthRejection('proxy attestation secret mismatch')

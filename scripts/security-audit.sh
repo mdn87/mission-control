@@ -151,7 +151,11 @@ PROXY_DEFAULT_ROLE="${MC_PROXY_AUTH_DEFAULT_ROLE:-}"
 if [[ -z "$PROXY_HEADER" ]]; then
   info "MC_PROXY_AUTH_HEADER is not set (header-based proxy auth disabled)"
 else
-  if [[ ${#PROXY_SECRET} -ge 32 ]]; then
+  # The .env.example placeholder is 42 characters, so a length-only check would
+  # certify a secret that is published in the repository.
+  if [[ "$PROXY_SECRET" == "replace-with-at-least-32-random-characters" ]]; then
+    fail "MC_PROXY_AUTH_SECRET is still the .env.example placeholder (public value; proxy auth disabled)"
+  elif [[ ${#PROXY_SECRET} -ge 32 ]]; then
     pass "MC_PROXY_AUTH_SECRET is at least 32 characters"
   else
     fail "MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is missing or under 32 characters (proxy auth disabled)"
