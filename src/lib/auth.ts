@@ -470,17 +470,27 @@ export function getUserFromRequest(request: Request): User | null {
   // deployment concerns; see SECURITY.md. A missing or short secret fails
   // closed and logs a critical event on the first request.
   //
-  // This runs *before* the session cookie, deliberately. When proxy auth is
-  // enabled the gateway is the identity authority, and its assertion is current
-  // where a cookie may be stale — a user whose upstream identity changed should
-  // not keep the old one because a cookie outlived it. Checking the cookie first
-  // would let a stale or stolen session override the authority.
+  // This runs *before* the session cookie, deliberately: when proxy auth is
+  // enabled the gateway is the identity authority, so an identity it asserts and
+  // we can resolve takes precedence over any cookie the request also carries.
   //
-  // The ordering does not widen exposure: reaching this branch requires the
+  // The ordering does not widen exposure. Reaching this branch requires the
   // attestation secret, and anyone holding it authenticates as whoever they name
-  // regardless of which check runs first. When proxy auth is not configured the
-  // block is skipped entirely, so the ordering is moot for every deployment that
-  // does not opt in.
+  // regardless of which check runs first. Deployments that do not set
+  // MC_PROXY_AUTH_HEADER skip the block entirely.
+  //
+  // It is a hybrid, not an override, and the difference matters. An attested
+  // request whose identity does *not* resolve — renamed, unknown, or unapproved,
+  // with auto-provisioning off — falls through to the session and API-key checks
+  // below, so a still-valid cookie can authenticate that user's own account even
+  // though the gateway named someone else. Precedence therefore holds only for
+  // identities that resolve; it is not a guarantee that the gateway always wins.
+  //
+  // Failing closed instead would be more coherent, but it would lock out any
+  // deployment mixing local login with proxy auth, where the gateway injects
+  // headers for users who authenticate locally. That is a behaviour decision
+  // with real breakage risk, not a comment fix, so it is left as it is and
+  // described accurately here.
   const proxyAuthConfig = readProxyAuthConfig()
   if (proxyAuthConfig.status !== 'disabled') {
     if (proxyAuthConfig.status === 'misconfigured') {

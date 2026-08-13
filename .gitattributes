@@ -3,9 +3,13 @@
 # Vendored third-party attribution text, kept byte-identical to what upstream
 # ships — a licensing artifact, not source to reformat.
 #
-# Git already leaves it alone: the file mixes 21 CRLF endings with a single lone
-# CR, so normalizing is not round-trip safe and `text=auto` declines it. That is
-# a heuristic, not a promise. `-text` states the intent outright, so the file
-# survives a deliberate `git add --renormalize` and a reader who finds CRLF in a
+# Git already leaves it alone, but for an incidental reason: the file contains a
+# lone CR among its 21 CRLF endings, which makes `text=auto` classify it as
+# binary and skip conversion. Verified — under `text=auto` a pure-CRLF file is
+# normalized on add while an otherwise identical file with one lone CR is not.
+#
+# That is a side effect of one stray byte, not a decision. `-text` states the
+# intent outright, so the file is preserved because it is meant to be rather
+# than because a heuristic happens to spare it, and a reader who finds CRLF in a
 # repo that mandates LF has the reason next to the rule.
 public/office-sprites/kenney/ATTRIBUTION-KENNEY.txt -text
