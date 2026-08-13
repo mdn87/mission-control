@@ -86,3 +86,62 @@ describe('a user cannot approve themselves', () => {
     expect(updateUser).toHaveBeenCalledWith(9, expect.objectContaining({ is_approved: 1 }))
   })
 })
+
+describe('a user cannot approve their own access request', () => {
+  async function loadApprovalRoute(admin: Record<string, unknown>, reqEmail: string, selfRowMatches: boolean) {
+    vi.resetModules()
+    const run = vi.fn()
+    vi.doMock('@/lib/auth', () => ({
+      getUserFromRequest: vi.fn(() => admin),
+      createUser: vi.fn(() => ({ id: 42, username: 'someone-else', role: 'admin' })),
+      requireRole: vi.fn(() => ({ user: admin })),
+    }))
+    vi.doMock('@/lib/db', () => ({
+      getDatabase: vi.fn(() => ({
+        prepare: vi.fn((sql: string) => ({
+          get: vi.fn(() => {
+            if (sql.includes('FROM access_requests')) return { id: 1, email: reqEmail, status: 'pending' }
+            if (sql.includes('AND id = ?')) return selfRowMatches ? { id: 9 } : undefined
+            return undefined
+          }),
+          run,
+        })),
+        transaction: vi.fn((fn: () => unknown) => fn),
+      })),
+      logAuditEvent: vi.fn(),
+    }))
+    vi.doMock('@/lib/rate-limit', () => ({ identitySecurityMutationLimiter: vi.fn(() => null) }))
+    vi.doMock('@/lib/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }))
+    vi.doMock('@/lib/validation', () => ({
+      validateBody: vi.fn(async () => ({ data: { request_id: 1, action: 'approve', role: 'admin' } })),
+      accessRequestActionSchema: {},
+    }))
+    const route = await import('@/app/api/auth/access-requests/route')
+    return { route, run }
+  }
+
+  const revokedAdmin = {
+    id: 9, username: 'revoked-user', role: 'admin', email: 'revoked@example.com',
+    workspace_id: 1, tenant_id: 1, is_approved: 0,
+  }
+
+  it('refuses when the request resolves to the acting admin by email', async () => {
+    // The bypass: an unapproved admin fails a Google login to create a pending
+    // request, then approves it, which sets is_approved = 1 without ever going
+    // through the guard on PUT /api/auth/users.
+    const { route, run } = await loadApprovalRoute(revokedAdmin, 'revoked@example.com', true)
+
+    const response = await route.POST({ json: async () => ({}), headers: new Headers() } as never)
+
+    expect(response.status).toBe(400)
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('still allows approving a request for someone else', async () => {
+    const { route } = await loadApprovalRoute(revokedAdmin, 'someone-else@example.com', false)
+
+    const response = await route.POST({ json: async () => ({}), headers: new Headers() } as never)
+
+    expect(response.status).not.toBe(400)
+  })
+})

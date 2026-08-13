@@ -425,8 +425,10 @@ configuration is part of the security boundary.
 >    stopped asserting that identity. Otherwise deletion makes the identity
 >    *unknown*, and the next attested request auto-provisions a fresh approved
 >    account with the configured role.
-> 2. Rotate the global `API_KEY` if the user knew it. It is not per-user, so
->    deleting the account does not affect it.
+> Rotate the global `API_KEY` **after** the deletion, not here — see below. It is
+> not per-user, so deletion does not affect it, but rotating while the account
+> still has a live session lets the target call `POST /api/tokens/rotate` again
+> and read the replacement.
 >
 > This is a workaround, not a procedure, and three gaps are worth knowing when
 > assessing exposure. Unapproving alone leaves a live session with no supported
@@ -437,26 +439,33 @@ configuration is part of the security boundary.
 > before awaiting its body, so a revoked admin can begin `POST /api/auth/users`,
 > stall, wait out the deletion, and then create a fresh approved admin.
 >
-> Seven mutation routes in that shape grant access outliving the revocation, and
-> **three of them leave the application**. Where the Mission Control process has
+> Eight mutation routes in that shape grant access outliving the revocation, and
+> **four of them leave the application**. Where the Mission Control process has
 > passwordless sudo for `useradd`, `POST /api/super/os-users` creates a host OS
 > account; `POST /api/gateways/connect` returns the real gateway bearer
 > credential to operator+ callers; `POST /api/cron` writes an enabled OpenClaw
-> cron job that keeps running agent turns afterwards. The other four mint a new
+> cron job that keeps running agent turns; `POST /api/nodes` approves a gateway
+> device pairing, and the paired device holds its own token. The rest mint a new
 > approved admin, an approved access request, an agent API key, or a webhook
 > aimed at a chosen URL.
 >
-> Revocation is therefore effective only once in-flight requests have drained.
-> Afterwards, **rotate the gateway credential** — `gateways/connect` returns the
-> existing token unchanged and logs nothing, so its state looks normal even after
-> disclosure and inspection cannot tell you otherwise. **Rotate the global
-> `API_KEY` only after the account is deleted**, since `tokens/rotate` needs no
-> body and returns the new key in plaintext to any surviving admin session.
+> **Restart the Mission Control process after deleting the account and before
+> rotating anything.** There is no drain check an operator can consult, and a
+> stalled request can be held open indefinitely — and rotating first is not a way
+> round it, because `gateways/connect` reads the token *after* its body await, so
+> a request resuming later discloses the replacement too. A restart is the only
+> step that deterministically ends an already-authorized handler.
 >
-> The audit log does not record webhook creation, agent key issuance, or cron job
-> creation — inspect the `webhooks` and `agent_api_keys` tables and OpenClaw's
-> `cron/jobs.json` directly, alongside the audit log and the host's account list
-> on super-admin deployments.
+> Then rotate the gateway credential (its state looks normal even after
+> disclosure, so inspection proves nothing) and the global `API_KEY` — the latter
+> only after the deletion and restart, since `tokens/rotate` needs no body and
+> returns the new key in plaintext to any surviving admin session.
+>
+> The audit log does not record webhook creation, agent key issuance, cron job
+> creation, gateway connect, or device pairing — inspect the `webhooks` and
+> `agent_api_keys` tables, OpenClaw's `cron/jobs.json`, and the gateway's paired
+> devices directly, alongside the audit log and the host's account list on
+> super-admin deployments.
 >
 > Closing this properly needs an atomic revocation operation and an authority
 > recheck after body parsing, not a documented ordering — see

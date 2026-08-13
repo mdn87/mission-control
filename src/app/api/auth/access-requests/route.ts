@@ -94,6 +94,21 @@ export async function POST(request: NextRequest) {
   }
 
   const email = String(reqRow.email || '').toLowerCase()
+
+  // Approving resolves a user by email and sets is_approved = 1, so without this
+  // an unapproved admin could restore their own approval here instead of through
+  // PUT /api/auth/users, which refuses it. Failing a Google login while
+  // unapproved is enough to create the pending request they would then approve.
+  const selfMatch = db.prepare(
+    'SELECT id FROM users WHERE lower(email) = ? AND id = ?'
+  ).get(email, admin.id) as { id: number } | undefined
+  if (selfMatch || (admin.email || '').toLowerCase() === email) {
+    return NextResponse.json(
+      { error: 'Cannot approve an access request for your own account' },
+      { status: 400 },
+    )
+  }
+
   const providerUserId = reqRow.provider_user_id ? String(reqRow.provider_user_id) : null
   const displayName = String(reqRow.display_name || email.split('@')[0] || 'Google User')
   const avatarUrl = reqRow.avatar_url ? String(reqRow.avatar_url) : null

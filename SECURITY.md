@@ -123,9 +123,10 @@ that role, re-granting the access you just removed. If the user knew the global
 **Deletion is still not complete.** Every mutation route authenticates at the
 top of the handler and only then awaits the request body, so a request begun
 before the deletion carries an authorization decision that deletion cannot
-cancel. Seven such routes grant access that outlives it: a new approved admin, an
+cancel. Eight such routes grant access that outlives it: a new approved admin, an
 approved access request, an agent API key, a webhook aimed at an attacker's URL,
-an OpenClaw cron job, a host OS account, and the gateway bearer credential.
+an OpenClaw cron job, a paired gateway device with its own token, a host OS
+account, and the gateway bearer credential.
 
 **Three of those leave the application**, and nothing done inside Mission Control
 undoes any of them. Where the process has passwordless sudo for `useradd`,
@@ -137,19 +138,30 @@ operator+ callers, which authenticates to the separate OpenClaw gateway.
 `POST /api/cron` writes an **enabled OpenClaw cron job** with an attacker-chosen
 schedule and agent-turn message, which keeps running afterwards.
 
-Treat revocation as effective only once in-flight requests have drained. Then:
+**Cut the in-flight requests before rotating anything.** There is no per-user
+request registry and no drain check, so "wait for requests to finish" is not
+something an operator can verify — a stalled body can be held open as long as the
+attacker likes. Worse, rotating first does not help: `POST /api/gateways/connect`
+reads the gateway token *after* its body await, so a request that resumes after
+your rotation discloses the **replacement** token. Restart the Mission Control
+process (or otherwise terminate its connections) after deleting the account and
+before rotating credentials. That is the only step here that deterministically
+ends an already-authorized handler.
+
+Then, in this order:
 
 - **Rotate the gateway credential.** `POST /api/gateways/connect` returns the
   existing token unchanged and writes no audit event, so a disclosed credential
   leaves the gateway's state looking entirely normal. Inspection cannot tell you
   whether it leaked; assume it did if such a request may have been in flight.
-- **Rotate the global `API_KEY` after deleting the account, never before.**
+- **Rotate the global `API_KEY`** — after the deletion and restart, never before.
   `POST /api/tokens/rotate` needs no request body and returns the new key in
-  plaintext, so a live admin session can rotate again and read the replacement.
+  plaintext, so any live admin session can rotate again and read the replacement.
 - **Do not rely on the audit log alone.** Webhook creation, agent API key
-  issuance, and cron job creation write no audit events. Inspect the `webhooks`
-  and `agent_api_keys` tables and OpenClaw's `cron/jobs.json` directly, alongside
-  the audit log for user creation and access-request approvals, and the host's
+  issuance, cron job creation, gateway connect, and device pairing write no audit
+  events. Inspect the `webhooks` and `agent_api_keys` tables, OpenClaw's
+  `cron/jobs.json`, and the gateway's paired-device list directly, alongside the
+  audit log for user creation and access-request approvals, and the host's
   account list on super-admin deployments.
 
 Known gaps, which are why the above is a workaround rather than a procedure:

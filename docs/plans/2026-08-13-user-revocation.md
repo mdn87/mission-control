@@ -62,6 +62,7 @@ rather than an ordinary race:
 | `POST /api/agents/[id]/keys` | An agent API key (`mca_…`, line 153) |
 | `POST /api/webhooks` | A webhook with an attacker-chosen URL and generated secret (lines 75-79) — ongoing event exfiltration |
 | `POST /api/cron` (`add`) | An enabled OpenClaw cron job with an attacker-chosen schedule and agent-turn message (lines 371-413), written to `cron/jobs.json` |
+| `POST /api/nodes` | An approved gateway device pairing (auth line 97, body await 102, `device.pair.approve` 132-134); the paired device holds its own token |
 
 **Three of these leave the application**, and none is undone by anything done
 inside Mission Control:
@@ -144,6 +145,22 @@ Worth establishing here, because neither was checked while filing this:
   admin-creates-admin path in problem 3 survives it.
 - Whether any path other than `PATCH /api/auth/me` can issue a session for an
   already-unapproved user.
+
+## Phase 1b: there is no drain primitive
+
+"Wait for in-flight requests to finish" appears in the current documentation
+because it was the only honest thing to say, not because it is actionable. There
+is no per-user in-flight registry and no operator-visible drain check, and an
+attacker choosing to stall a body can hold one open indefinitely.
+
+Rotating credentials first does not sidestep it: `POST /api/gateways/connect`
+reads the gateway token *after* its body await (line 151 onward), so a request
+resuming after a rotation discloses the replacement. The documentation therefore
+tells operators to restart the process, which is deterministic but heavy-handed.
+
+Whatever Phase 2 builds should make this unnecessary — revocation that takes
+effect against already-authorized handlers, rather than an operational
+instruction to bounce the service.
 
 ## Phase 2: atomic revocation
 
