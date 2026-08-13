@@ -100,6 +100,18 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
     }
 
+    // Reject anything that is not plainly 0 or 1 before it reaches the
+    // self-approval comparison below. `null` in particular is not merely
+    // invalid: Number(null) is 0, so it reads as "unchanged" for an unapproved
+    // user and passes the guard, and updateUser then stores SQL NULL — which
+    // every approval check reads back as approved via `is_approved ?? 1`.
+    if (is_approved !== undefined) {
+      const approvalValue = is_approved === null ? NaN : Number(is_approved)
+      if (approvalValue !== 0 && approvalValue !== 1) {
+        return NextResponse.json({ error: 'is_approved must be 0 or 1' }, { status: 400 })
+      }
+    }
+
     // Prevent demoting yourself
     if (userId === currentUser.id && role && role !== currentUser.role) {
       return NextResponse.json({ error: 'Cannot change your own role' }, { status: 400 })

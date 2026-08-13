@@ -76,6 +76,18 @@ describe('a user cannot approve themselves', () => {
     expect(updateUser).not.toHaveBeenCalled()
   })
 
+  it('refuses a null approval value, which would read as unchanged and store SQL NULL', async () => {
+    // Number(null) is 0, so for an unapproved user this passed the guard as
+    // "unchanged"; updateUser then wrote NULL, which every approval check reads
+    // back as approved through `is_approved ?? 1`.
+    const { route, updateUser } = await loadRoute(revokedAdmin)
+
+    const response = await route.PUT(putRequest({ id: 9, is_approved: null }))
+
+    expect(response.status).toBe(400)
+    expect(updateUser).not.toHaveBeenCalled()
+  })
+
   it('still allows an admin to approve someone else', async () => {
     const approver = { ...revokedAdmin, id: 1, username: 'admin', is_approved: 1 }
     const { route, updateUser } = await loadRoute(approver)

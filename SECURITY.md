@@ -129,23 +129,30 @@ replacement.
 **Deletion is still not complete.** Most mutation routes authenticate at the top
 of the handler and only then await the request body — 89 of them, though a few
 such as `POST /api/tokens/rotate` read no body at all — so a request begun before
-the deletion carries an authorization decision that deletion cannot cancel. Eight
-of those routes grant access that outlives it: a new approved admin, an approved
-access request, an agent API key, a webhook aimed at an attacker's URL, an
-OpenClaw cron job, a paired gateway device with its own token, a host OS account,
-and the gateway bearer credential.
+the deletion carries an authorization decision that deletion cannot cancel. Nine
+of those routes grant access or action that outlives it: a new approved admin, an
+approved access request, an agent API key, a webhook aimed at an attacker's URL,
+an OpenClaw cron job, a paired gateway device with its own token, a spawned
+gateway agent run, a host OS account, and the gateway bearer credential.
 
-**Four of those leave the application**, and nothing done inside Mission Control
-undoes any of them. Where the process has passwordless sudo for `useradd`,
-`POST /api/super/os-users` creates a **host OS account** (the requested password
-is applied by a separate `chpasswd` call whose failure is ignored, so without
-that privilege too the account exists with no usable password).
+**Five of those leave the application**, and nothing done inside Mission Control
+undoes any of them. Wherever the platform's account-creation command is available
+to the process, `POST /api/super/os-users` creates a **host OS account**. On Linux
+that is passwordless sudo for `useradd`, and the requested password is applied by
+a separate `chpasswd` call whose failure is ignored — so without that privilege
+too, the account exists with no usable password. On macOS it is `sysadminctl
+-addUser`, tried directly and then under sudo, and the requested password is set
+in the same call, so the attacker's password does take effect.
 `POST /api/gateways/connect` returns the **real gateway bearer credential** to
 operator+ callers, which authenticates to the separate OpenClaw gateway.
 `POST /api/cron` writes an **enabled OpenClaw cron job** with an attacker-chosen
 schedule and agent-turn message, which keeps running afterwards. `POST /api/nodes`
 approves a **gateway device pairing**, and the paired device holds its own token —
 revoke it at the gateway, since deleting the Mission Control user does not.
+`POST /api/spawn` submits an **agent run to the gateway** with an attacker-chosen
+task and a timeout of up to an hour; once the gateway has accepted it, restarting
+Mission Control does not cancel it, so find and cancel any runs spawned during
+the window.
 
 **Cut the in-flight requests before rotating anything.** There is no per-user
 request registry and no drain check, so "wait for requests to finish" is not

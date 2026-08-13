@@ -6,7 +6,7 @@ Filed as a plan rather than an issue because this repository has issues
 disabled. Surfaced while correcting documentation in #12: those docs described a
 revocation procedure, and review established that the procedure cannot be
 performed and that the underlying capability does not exist. #12 documents the
-limitation and adds two narrow guards; this plan covers the actual fix.
+limitation and adds three narrow guards; this plan covers the actual fix.
 
 ## The problem
 
@@ -40,7 +40,7 @@ the password path reloads `password_hash` from `users` after parsing and returns
 matters for problem 1, where sessions cannot be cleared any other way, and not
 for the deletion workaround.
 
-**5. Authorization is decided before the request body is read, everywhere.**
+**5. Authorization is decided before the request body is read.**
 Handlers call `getUserFromRequest` or `requireRole` at the top and only then
 `await validateBody(...)` or `await request.json()`. The authorization decision
 is an in-memory object from before the await, so nothing that happens during it —
@@ -55,8 +55,8 @@ architectural: 89 mutation handlers under `src/app/api` match the shape
 call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
 `await request.json()`).
 
-Most merely let a revoked user complete one more write. **Eight grant access that
-survives account deletion**, which is what makes the shape a revocation problem
+Most merely let a revoked user complete one more write. **Nine grant access or
+action that survives account deletion**, which is what makes the shape a revocation problem
 rather than an ordinary race:
 
 | Route | What survives the revocation |
@@ -69,16 +69,20 @@ rather than an ordinary race:
 | `POST /api/webhooks` | A webhook with an attacker-chosen URL and generated secret (lines 75-79) — ongoing event exfiltration |
 | `POST /api/cron` (`add`) | An enabled OpenClaw cron job with an attacker-chosen schedule and agent-turn message (lines 371-413), written to `cron/jobs.json` |
 | `POST /api/nodes` | An approved gateway device pairing (auth line 97, body await 102, `device.pair.approve` 132-134); the paired device holds its own token |
+| `POST /api/spawn` | A gateway agent run with an attacker-chosen task (auth line 19, body await 28, `sessions_spawn` 86-103), timeout up to an hour; a Mission Control restart does not cancel it |
 
-**Four of these leave the application**, and none is undone by anything done
+**Five of these leave the application**, and none is undone by anything done
 inside Mission Control:
 
-- The host OS account. Creating it needs passwordless sudo for `useradd`. Note
-  the *password* from the request body is applied by a **separate**
-  `sudo -n /usr/sbin/chpasswd` call at lines 379-383 whose failure is silently
-  swallowed, so a narrowly scoped sudoers rule yields an account with no usable
-  password rather than the attacker-chosen one. That is a weaker outcome than a
-  password-backed login, not a safe one.
+- The host OS account, wherever the platform's account-creation command is
+  reachable. On Linux that is passwordless sudo for `useradd`, and the *password*
+  from the request body goes through a **separate** `sudo -n /usr/sbin/chpasswd`
+  call at lines 379-383 whose failure is silently swallowed — so a narrowly
+  scoped sudoers rule yields an account with no usable password rather than the
+  attacker's. That is a weaker outcome, not a safe one. On macOS the same
+  endpoint uses `sysadminctl -addUser` (lines 341-351), tried directly and then
+  under sudo, with the requested password set in the same call — so there the
+  attacker's password does take effect.
 - The gateway bearer credential, which authenticates directly to the separate
   OpenClaw gateway and is not rotated by deleting a Mission Control user. Note
   the route returns the *existing* token unchanged and writes no audit event, so
@@ -89,6 +93,10 @@ inside Mission Control:
 - The paired gateway device, which holds its own token for the separate gateway.
   Deleting the Mission Control user does not revoke the pairing; it has to be
   revoked at the gateway.
+- The spawned gateway agent run, which the gateway executes on its own for up to
+  an hour. This is the one case a Mission Control restart cannot touch, which
+  makes the restart step in the current documentation necessary but not
+  sufficient.
 
 `PATCH /api/auth/me` mints a session, but **not through the deletion race**: the
 password path reloads `password_hash` from `users` (line ~71) and returns 403
@@ -97,7 +105,7 @@ problem 1 and not for the deletion workaround.
 
 ### What this list is not
 
-The count went 2 → 5 → 9 → 6 → 7 → 8 across successive passes, every step of it
+The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 across successive passes, every step of it
 prompted by review rather than by my own checking. The nine was wrong in both
 directions, and the errors are worth recording so the next reader calibrates
 against them rather than the number:
@@ -116,12 +124,13 @@ against them rather than the number:
 - `PUT /api/workspaces/[id]` was counted and does not belong: it updates name,
   brand, and isolation only. The user reassignment at line 151 is in the `DELETE`
   handler, which does not await a body either.
-- `POST /api/gateways/connect` was missed entirely, and it is one of the two
-  external paths.
+- `POST /api/gateways/connect` was missed entirely, and it is one of the five
+  external paths. `POST /api/nodes` and `POST /api/spawn` were missed the same
+  way in later passes.
 
 The scan keyed on `createUser`/`createSession`/`hashApiKey`/`randomBytes`/
 `INSERT INTO` and similar, so a route granting persistence by other means would
-not appear. Treat eight as the current floor, not a total.
+not appear. Treat nine as the current floor, not a total.
 
 ## Current workaround
 

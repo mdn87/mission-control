@@ -435,19 +435,22 @@ configuration is part of the security boundary.
 > way to clear it. While an unapproved admin still holds that session, the admin
 > routes' role-only checks keep passing, so they can create another approved
 > admin that survives whatever is done to the original. And deletion does not
-> stop a request that was already authorized: every mutation route authenticates
-> before awaiting its body, so a revoked admin can begin `POST /api/auth/users`,
-> stall, wait out the deletion, and then create a fresh approved admin.
+> stop a request that was already authorized: most mutation routes authenticate
+> before awaiting their body — 89 of them, though some read no body at all — so a
+> revoked admin can begin `POST /api/auth/users`, stall, wait out the deletion,
+> and then create a fresh approved admin.
 >
-> Eight mutation routes in that shape grant access outliving the revocation, and
-> **four of them leave the application**. Where the Mission Control process has
-> passwordless sudo for `useradd`, `POST /api/super/os-users` creates a host OS
-> account; `POST /api/gateways/connect` returns the real gateway bearer
-> credential to operator+ callers; `POST /api/cron` writes an enabled OpenClaw
-> cron job that keeps running agent turns; `POST /api/nodes` approves a gateway
-> device pairing, and the paired device holds its own token. The rest mint a new
-> approved admin, an approved access request, an agent API key, or a webhook
-> aimed at a chosen URL.
+> Nine mutation routes in that shape grant access outliving the revocation, and
+> **five of them leave the application**. Wherever the platform's account-creation
+> command is reachable — passwordless sudo for `useradd` on Linux, `sysadminctl
+> -addUser` on macOS, which unlike Linux does apply the requested password —
+> `POST /api/super/os-users` creates a host OS account. `POST /api/gateways/connect`
+> returns the real gateway bearer credential to operator+ callers; `POST /api/cron`
+> writes an enabled OpenClaw cron job that keeps running agent turns;
+> `POST /api/nodes` approves a gateway device pairing whose device holds its own
+> token; `POST /api/spawn` submits an agent run to the gateway that a Mission
+> Control restart cannot cancel. The rest mint a new approved admin, an approved
+> access request, an agent API key, or a webhook aimed at a chosen URL.
 >
 > **Restart the Mission Control process after deleting the account and before
 > rotating anything.** There is no drain check an operator can consult, and a
