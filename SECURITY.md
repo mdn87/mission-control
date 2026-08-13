@@ -157,18 +157,22 @@ While the target can still reach Mission Control, no ordering helps at all —
 `security.api_key_hash` *after* you rotate, and `POST /api/gateways/connect`
 reads the gateway token after its body await.
 
-**Step 1 — stop *both* schedulers.** Mission Control's `task_dispatch` and
-`recurring_task_spawn` run every 60 seconds, so a live scheduler will claim tasks
-and create recurrences while you work; isolation does not contain them, because
-their dispatch branches reach the Claude runtime, provider APIs and host CLIs
-directly.
+**Step 1 — stop every scheduler, in both systems.** Mission Control runs
+**twelve** scheduled jobs (`src/lib/scheduler.ts`), not one or two, and several
+act outside the application regardless of ingress: `task_dispatch` and
+`recurring_task_spawn` reach the Claude runtime, provider APIs and host CLIs;
+`aegis_review` invokes a provider or the gateway's `agent` method 30 seconds
+after startup; `webhook_retry` re-delivers stored payloads to enabled external
+URLs every 60 seconds; and the sync and heartbeat jobs talk to the gateway.
+Disable the scheduler as a whole rather than picking jobs — the list above is
+what review has found, and this document has been wrong about every enumeration
+it has attempted.
 
-OpenClaw runs a **second scheduler of its own**. `POST /api/cron` writes enabled
-`agentTurn` jobs into `cron/jobs.json`, and that scheduler survives Mission
-Control being stopped *and* the ingress isolation — it is on the other side of the
-boundary. Stop it, or quarantine suspect jobs in `cron/jobs.json`, before going
-further. Reviewing that file afterwards is too late: the jobs run throughout
-everything below.
+OpenClaw runs a **second scheduler** for the `cron/jobs.json` jobs that
+`POST /api/cron` writes. It survives Mission Control being stopped *and* the
+ingress isolation, because it is on the other side of the boundary. Stop it, or
+quarantine suspect jobs, now — reviewing that file afterwards is too late, since
+the jobs run throughout everything below.
 
 **Step 2 — stop Mission Control, and verify the deployed revision before
 starting it again.** A stalled `POST /api/releases/update` can leave an older or
@@ -194,11 +198,12 @@ exists — that row wins until deleted), then **every registered gateway's**
 credential, not just the primary: `POST /api/gateways/connect` serves any
 registered id to operator+ callers.
 
-**Step 5 — cancel work already accepted by the gateway** — runs from `spawn`,
-turns queued by `wake` or `broadcast`, and any gateway process started by
-`gateways/control`. None of this is reachable from Mission Control's own state,
-and restarting Mission Control does not retract it, so it has to be stopped at
-the gateway before you reopen anything.
+**Step 5 — cancel work the gateway has already accepted.** Many routes dispatch
+to it — `spawn`, `wake`, `broadcast`, `chat/messages`, `agents/message`,
+`pipelines/run` and others; a dozen route files reference gateway calls, so treat
+those names as examples rather than a list. Anything the gateway accepted keeps
+running regardless of what happens to Mission Control, so it has to be stopped at
+the gateway. Also stop any gateway process started by `gateways/control`.
 
 **Only then lift the isolation**, and re-check the account and task tables once
 more — if any handler survived the restart, this is where it shows.
@@ -216,6 +221,11 @@ reaches an external system belongs here.
   `POST /api/tasks/[id]/broadcast`. Cancel them at the gateway; a Mission Control
   restart does not retract accepted work. Also check whether a gateway process
   was started by `POST /api/gateways/control` that was meant to stay stopped.
+- **Every runtime's persistent files, not just OpenClaw's.** Hermes has its own:
+  `POST /api/hermes` writes provider API keys into its `.env` (`set-env`, lines
+  127-144) and overwrites its `SOUL.md` (`set-soul`, lines 150-159), both of which
+  survive a Mission Control restart and steer later Hermes behaviour. Restore
+  those before restarting that runtime.
 - **OpenClaw's persistent files**: `exec-approvals.json` allowlists,
   `cron/jobs.json` jobs, `openclaw.json` configuration (only gateway auth fields
   are blocked, so `tools`, `elevated` and `channels` can be weakened), the agent

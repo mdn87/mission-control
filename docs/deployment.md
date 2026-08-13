@@ -457,13 +457,16 @@ configuration is part of the security boundary.
 > authenticates directly to the browser-facing gateway with a cached token, and
 > `POST /api/super/os-users` may have created a host account with a password they
 > chose.
-> **1. Stop both schedulers.** Mission Control's `task_dispatch` and
-> `recurring_task_spawn` run every 60 seconds and reach the Claude runtime,
-> provider APIs and host CLIs directly, so isolation does not contain them — and
-> OpenClaw runs a scheduler of its own for the `cron/jobs.json` jobs that
-> `POST /api/cron` writes, which survives Mission Control being stopped and the
-> isolation alike. Stop it or quarantine suspect jobs now; reviewing that file
-> afterwards is too late.
+> **1. Stop every scheduler in both systems.** Mission Control runs twelve
+> scheduled jobs, several of which act outside it regardless of ingress —
+> `task_dispatch` and `recurring_task_spawn` reach the Claude runtime, provider
+> APIs and host CLIs; `aegis_review` calls a provider or the gateway 30 seconds
+> after startup; `webhook_retry` re-delivers to external URLs every 60 seconds;
+> the sync and heartbeat jobs talk to the gateway. Disable the scheduler as a
+> whole rather than picking jobs. OpenClaw runs a second scheduler of its own for
+> `cron/jobs.json`, which survives Mission Control being stopped and the isolation
+> alike — stop it or quarantine suspect jobs now.
+>
 > **2. Stop Mission Control and verify the deployed revision** before starting it
 > again — a stalled `POST /api/releases/update` can leave an altered build on disk,
 > and everything after would run under it. Stopping the process is also the only
@@ -477,9 +480,11 @@ configuration is part of the security boundary.
 > (editing `API_KEY` is not a rotation where a `settings.security.api_key_hash`
 > row exists), then every registered gateway's credential — `gateways/connect`
 > serves any registered id.
-> **5. Cancel work the gateway already accepted** — runs from `spawn`, turns from
-> `wake`/`broadcast`, any process started by `gateways/control`. Restarting
-> Mission Control does not retract it.
+> **5. Cancel work the gateway already accepted.** Many routes dispatch to it —
+> `spawn`, `wake`, `broadcast`, `chat/messages`, `agents/message`,
+> `pipelines/run` and others — so treat those as examples, not a list. Also stop
+> any gateway process started by `gateways/control`. Restarting Mission Control
+> retracts none of it.
 >
 > Only then lift the isolation, and re-check the account and task tables once more.
 >
@@ -487,7 +492,8 @@ configuration is part of the security boundary.
 > agent runs and queued turns at the gateway (`spawn`, `wake`, `broadcast`), a
 > gateway process started by `gateways/control`, OpenClaw's `exec-approvals.json`,
 > `cron/jobs.json`, `openclaw.json`, agent instruction files, skill roots and
-> `.env` (`integrations` writes there, including `OPENCLAW_GATEWAY_TOKEN`), linked
+> `.env` (`integrations` writes there, including `OPENCLAW_GATEWAY_TOKEN`),
+> **Hermes's own `.env` and `SOUL.md`** (`POST /api/hermes`), linked
 > channels, GitHub activity from `POST /api/github`, commands accepted by the
 > Lugos operator service, the deployed release, and host accounts.
 > See [SECURITY.md](../SECURITY.md#trusted-reverse-proxy-authentication) for the
