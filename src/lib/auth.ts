@@ -13,6 +13,11 @@ const INSECURE_PROXY_AUTH_SECRETS = new Set([
   'replace-with-at-least-32-random-characters',
 ])
 
+// RFC 7230 token. Headers.get() throws a TypeError on anything else, and this
+// runs before any other authentication method, so an invalid configured name
+// would take down session and API-key auth along with it.
+const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+
 // Log once per distinct reason if proxy auth is misconfigured.
 // Deferred to avoid DB access during module initialization.
 const _proxyAuthMisconfigWarned = new Set<string>()
@@ -484,7 +489,11 @@ export function getUserFromRequest(request: Request): User | null {
   const proxyAuthHeader = (process.env.MC_PROXY_AUTH_HEADER || '').trim()
   if (proxyAuthHeader) {
     const proxyAuthSecret = process.env.MC_PROXY_AUTH_SECRET || ''
-    if (proxyAuthSecret.length < MIN_PROXY_AUTH_SECRET_LENGTH) {
+    if (!HTTP_HEADER_NAME.test(proxyAuthHeader)) {
+      warnProxyAuthMisconfigOnce(
+        'MC_PROXY_AUTH_HEADER is not a valid HTTP header name — proxy auth disabled',
+      )
+    } else if (proxyAuthSecret.length < MIN_PROXY_AUTH_SECRET_LENGTH) {
       warnProxyAuthMisconfigOnce(
         `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,
       )

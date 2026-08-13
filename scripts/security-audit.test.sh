@@ -140,6 +140,41 @@ echo 'MC_PROXY_AUTH_DEFAULT_ROLE=viewer' >> "$ROLE_ENV"
 good_role_output="$(bash "$AUDIT" --env-file "$ROLE_ENV" || true)"
 grep -Fq '[WARN] MC_PROXY_AUTH_DEFAULT_ROLE=viewer auto-provisions' <<< "$good_role_output"
 
+# scripts/load-env.sh accepts `export KEY=value`; the audit must grade the same
+# settings the server starts with rather than seeing none of them.
+EXPORT_ENV="$TMP_DIR/exported.env"
+cat > "$EXPORT_ENV" <<'EOF'
+export AUTH_PASS="a secure # password"
+export API_KEY=test-api-key
+export MC_ALLOWED_HOSTS=127.0.0.1,localhost
+export MC_COOKIE_SECURE=1
+export MC_COOKIE_SAMESITE=strict
+export MC_ENABLE_HSTS=1
+export MC_DISABLE_RATE_LIMIT=0
+export MC_PROXY_AUTH_HEADER=X-User-Email
+export MC_PROXY_AUTH_SECRET=short
+EOF
+chmod 600 "$EXPORT_ENV"
+export_output="$(bash "$AUDIT" --env-file "$EXPORT_ENV" || true)"
+grep -Fq '[PASS] MC_ALLOWED_HOSTS is configured: 127.0.0.1,localhost' <<< "$export_output"
+grep -Fq '[FAIL] MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is missing or under 32 characters' <<< "$export_output"
+if bash "$AUDIT" --env-file "$EXPORT_ENV" --strict >/dev/null 2>&1; then
+  echo 'Expected --strict to fail on an export-prefixed env file with a short secret' >&2
+  exit 1
+fi
+
+# An invalid header name breaks every auth path at runtime, so it is a finding.
+BAD_HEADER_ENV="$TMP_DIR/bad-header.env"
+sed 's/^export MC_PROXY_AUTH_HEADER=.*/export MC_PROXY_AUTH_HEADER=X User/; s/^export MC_PROXY_AUTH_SECRET=.*/export MC_PROXY_AUTH_SECRET=0123456789abcdef0123456789abcdef/' \
+  "$EXPORT_ENV" > "$BAD_HEADER_ENV"
+chmod 600 "$BAD_HEADER_ENV"
+bad_header_output="$(bash "$AUDIT" --env-file "$BAD_HEADER_ENV" || true)"
+grep -Fq '[FAIL] MC_PROXY_AUTH_HEADER=X User is not a valid HTTP header name' <<< "$bad_header_output"
+if bash "$AUDIT" --env-file "$BAD_HEADER_ENV" --strict >/dev/null 2>&1; then
+  echo 'Expected --strict to fail on an invalid MC_PROXY_AUTH_HEADER' >&2
+  exit 1
+fi
+
 # MC_ALLOWED_HOSTS omitted is now a finding, since host checking fails closed.
 NO_HOSTS_ENV="$TMP_DIR/no-hosts.env"
 cat > "$NO_HOSTS_ENV" <<'EOF'

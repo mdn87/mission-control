@@ -68,6 +68,15 @@ if [[ -f "$ENV_FILE" ]]; then
     key="${raw_key#"${raw_key%%[![:space:]]*}"}"
     key="${key%"${key##*[![:space:]]}"}"
     [[ -z "$key" || "$key" == \#* ]] && continue
+    # scripts/load-env.sh accepts an optional `export ` prefix; without stripping
+    # it here the audit would grade an entirely different set of settings than
+    # the ones the server starts with.
+    if [[ "$key" == export[[:space:]]* ]]; then
+      key="${key#export}"
+      key="${key#"${key%%[![:space:]]*}"}"
+      key="${key%"${key##*[![:space:]]}"}"
+      [[ -z "$key" ]] && continue
+    fi
     value="$(trim_env_value "$raw_value")"
     case "$key" in
       AUTH_PASS) AUTH_PASS="$value" ;;
@@ -159,6 +168,13 @@ PROXY_DEFAULT_ROLE="${MC_PROXY_AUTH_DEFAULT_ROLE:-}"
 if [[ -z "$PROXY_HEADER" ]]; then
   info "MC_PROXY_AUTH_HEADER is not set (header-based proxy auth disabled)"
 else
+  # An invalid field name makes Headers.get() throw for every request, taking
+  # session and API-key auth down with it, so this is not merely cosmetic.
+  PROXY_HEADER_PATTERN='^[A-Za-z0-9!#$%&'"'"'*+.^_`|~-]+$'
+  if [[ ! "$PROXY_HEADER" =~ $PROXY_HEADER_PATTERN ]]; then
+    fail "MC_PROXY_AUTH_HEADER=$PROXY_HEADER is not a valid HTTP header name (proxy auth disabled)"
+  fi
+
   # The .env.example placeholder is 42 characters, so a length-only check would
   # certify a secret that is published in the repository.
   if [[ "$PROXY_SECRET" == "replace-with-at-least-32-random-characters" ]]; then

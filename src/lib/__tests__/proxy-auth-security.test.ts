@@ -169,6 +169,17 @@ describe('trusted proxy header authentication', () => {
     )
   })
 
+  it('treats an invalid configured header name as disabled instead of throwing', async () => {
+    // Headers.get() throws a TypeError on a non-token name, and this runs before
+    // every other authentication method, so a typo here would break session and
+    // API-key auth for requests carrying no proxy headers at all.
+    process.env.MC_PROXY_AUTH_HEADER = 'X User'
+    const { getUserFromRequest } = await loadAuth({ database: makeEmptyDatabase() })
+
+    expect(() => getUserFromRequest(new Request('http://localhost/api/x'))).not.toThrow()
+    expect(getUserFromRequest(new Request('http://localhost/api/x'))).toBeNull()
+  })
+
   it('does not let mismatched-secret noise suppress the post-attestation signal', async () => {
     // A client with no secret can spray a public route. If that shared one reason
     // consumed a single global window, the event that indicates someone actually
