@@ -52,7 +52,6 @@ describe('trusted proxy header authentication', () => {
     process.env = {
       ...originalEnv,
       MC_PROXY_AUTH_HEADER: 'X-User-Email',
-      MC_PROXY_AUTH_TRUSTED_IPS: '127.0.0.1',
       MC_PROXY_AUTH_SECRET: '0123456789abcdef0123456789abcdef',
     }
     delete process.env.API_KEY
@@ -63,11 +62,13 @@ describe('trusted proxy header authentication', () => {
     vi.restoreAllMocks()
   })
 
-  it('rejects a spoofed trusted IP and admin identity without proxy attestation', async () => {
+  it('ignores forwarding headers a client can set when claiming an identity', async () => {
     const { requireRole } = await loadAuth()
     const request = new Request('http://localhost/api/auth/users', {
       headers: {
+        // Both are client-settable, and neither grants anything on its own.
         'x-real-ip': '127.0.0.1',
+        'x-forwarded-for': '127.0.0.1',
         'x-user-email': 'admin',
       },
     })
@@ -77,12 +78,11 @@ describe('trusted proxy header authentication', () => {
     expect(result).toEqual({ error: 'Authentication required', status: 401 })
   })
 
-  it('accepts the configured proxy identity with both the attestation secret and a trusted peer', async () => {
+  it('accepts the configured proxy identity with the matching attestation secret', async () => {
     const { requireRole } = await loadAuth()
     const request = new Request('http://localhost/api/auth/users', {
       headers: {
         'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef',
-        'x-real-ip': '127.0.0.1',
         'x-user-email': 'admin',
       },
     })
@@ -93,12 +93,13 @@ describe('trusted proxy header authentication', () => {
     expect(result.user?.role).toBe('admin')
   })
 
-  it('rejects a valid attestation secret presented from an untrusted peer address', async () => {
+  it('rejects a same-length but incorrect attestation secret', async () => {
     const { requireRole } = await loadAuth()
     const request = new Request('http://localhost/api/auth/users', {
       headers: {
-        'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef',
-        'x-real-ip': '203.0.113.9',
+        // Same length as the configured secret, so the length guard cannot
+        // short-circuit and the constant-time comparison is what rejects it.
+        'x-mc-proxy-secret': 'fedcba9876543210fedcba9876543210',
         'x-user-email': 'admin',
       },
     })
@@ -108,16 +109,10 @@ describe('trusted proxy header authentication', () => {
     expect(result).toEqual({ error: 'Authentication required', status: 401 })
   })
 
-  it('rejects a same-length but incorrect attestation secret from a trusted peer', async () => {
+  it('rejects an identity header presented with no attestation secret at all', async () => {
     const { requireRole } = await loadAuth()
     const request = new Request('http://localhost/api/auth/users', {
-      headers: {
-        // Same length as the configured secret, so the length guard cannot
-        // short-circuit and the constant-time comparison is what rejects it.
-        'x-mc-proxy-secret': 'fedcba9876543210fedcba9876543210',
-        'x-real-ip': '127.0.0.1',
-        'x-user-email': 'admin',
-      },
+      headers: { 'x-user-email': 'admin' },
     })
 
     const result = requireRole(request, 'admin')
@@ -131,23 +126,6 @@ describe('trusted proxy header authentication', () => {
     const request = new Request('http://localhost/api/auth/users', {
       headers: {
         'x-mc-proxy-secret': 'too-short',
-        'x-real-ip': '127.0.0.1',
-        'x-user-email': 'admin',
-      },
-    })
-
-    const result = requireRole(request, 'admin')
-
-    expect(result).toEqual({ error: 'Authentication required', status: 401 })
-  })
-
-  it('fails closed when no trusted proxy addresses are configured', async () => {
-    delete process.env.MC_PROXY_AUTH_TRUSTED_IPS
-    const { requireRole } = await loadAuth()
-    const request = new Request('http://localhost/api/auth/users', {
-      headers: {
-        'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef',
-        'x-real-ip': '127.0.0.1',
         'x-user-email': 'admin',
       },
     })

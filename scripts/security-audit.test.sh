@@ -63,11 +63,11 @@ MC_PROXY_AUTH_HEADER=X-User-Email
 EOF
 chmod 600 "$PROXY_ENV"
 
-# Proxy auth enabled without its two required settings is a finding, not a warning.
+# Proxy auth enabled without its required secret is a finding, not a warning.
 proxy_output="$(bash "$AUDIT" --env-file "$PROXY_ENV" || true)"
 grep -Fq '[FAIL] MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is missing or under 32 characters' <<< "$proxy_output"
-grep -Fq '[FAIL] MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_TRUSTED_IPS is empty' <<< "$proxy_output"
 grep -Fq 'Verify the proxy strips client-supplied X-User-Email' <<< "$proxy_output"
+grep -Fq 'Verify the app is not reachable except through that proxy' <<< "$proxy_output"
 
 if bash "$AUDIT" --env-file "$PROXY_ENV" --strict >/dev/null 2>&1; then
   echo 'Expected --strict to fail when proxy auth is half-configured' >&2
@@ -76,12 +76,15 @@ fi
 
 cat >> "$PROXY_ENV" <<'EOF'
 MC_PROXY_AUTH_SECRET=0123456789abcdef0123456789abcdef
-MC_PROXY_AUTH_TRUSTED_IPS=127.0.0.1,::1
 EOF
 
 proxy_output="$(bash "$AUDIT" --env-file "$PROXY_ENV" --strict)"
 grep -Fq '[PASS] MC_PROXY_AUTH_SECRET is at least 32 characters' <<< "$proxy_output"
-grep -Fq '[PASS] MC_PROXY_AUTH_TRUSTED_IPS is configured: 127.0.0.1,::1' <<< "$proxy_output"
+
+# The retired setting must be called out rather than silently ignored.
+echo 'MC_PROXY_AUTH_TRUSTED_IPS=127.0.0.1' >> "$PROXY_ENV"
+retired_output="$(bash "$AUDIT" --env-file "$PROXY_ENV")"
+grep -Fq '[WARN] MC_PROXY_AUTH_TRUSTED_IPS is set but no longer used' <<< "$retired_output"
 
 # MC_ALLOWED_HOSTS omitted is now a finding, since host checking fails closed.
 NO_HOSTS_ENV="$TMP_DIR/no-hosts.env"

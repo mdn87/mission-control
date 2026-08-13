@@ -157,16 +157,16 @@ else
     fail "MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is missing or under 32 characters (proxy auth disabled)"
   fi
   if [[ -n "$PROXY_TRUSTED" ]]; then
-    pass "MC_PROXY_AUTH_TRUSTED_IPS is configured: $PROXY_TRUSTED"
-  else
-    fail "MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_TRUSTED_IPS is empty (proxy auth disabled)"
+    warn "MC_PROXY_AUTH_TRUSTED_IPS is set but no longer used; the app cannot identify the proxy hop from headers (see SECURITY.md)"
   fi
   if [[ -n "$PROXY_DEFAULT_ROLE" ]]; then
     warn "MC_PROXY_AUTH_DEFAULT_ROLE=$PROXY_DEFAULT_ROLE auto-provisions accounts for unknown proxy identities"
   fi
-  # Cannot be checked from here — it lives in the reverse proxy configuration —
-  # but it is the control the whole scheme depends on, so always say it.
-  info "Verify the proxy strips client-supplied $PROXY_HEADER, X-MC-Proxy-Secret, X-Forwarded-For, and X-Real-IP headers before injecting its own"
+  # Neither can be checked from here — one lives in the reverse proxy config and
+  # the other in the network layer — but the secret is the only credential, so
+  # these two controls are what the scheme actually rests on. Always say them.
+  info "Verify the proxy strips client-supplied $PROXY_HEADER and X-MC-Proxy-Secret headers before injecting its own"
+  info "Verify the app is not reachable except through that proxy (bound to loopback or an internal network)"
 fi
 
 # 4. Cookie/HTTPS config

@@ -48,10 +48,11 @@ Run `bash scripts/security-audit.sh` to check your deployment automatically.
 ### Network
 - [ ] `MC_ALLOWED_HOSTS` is configured (not `MC_ALLOW_ANY_HOST=1`)
 - [ ] Dashboard is behind a reverse proxy with TLS (Caddy, nginx, Tailscale)
-- [ ] If `MC_PROXY_AUTH_HEADER` is set: `MC_PROXY_AUTH_SECRET` (32+ characters)
-      and `MC_PROXY_AUTH_TRUSTED_IPS` are both configured
+- [ ] If `MC_PROXY_AUTH_HEADER` is set: `MC_PROXY_AUTH_SECRET` is 32+ characters
 - [ ] If `MC_PROXY_AUTH_HEADER` is set: the proxy strips client-supplied
-      identity, `X-MC-Proxy-Secret`, `X-Forwarded-For`, and `X-Real-IP` headers
+      identity and `X-MC-Proxy-Secret` headers before injecting its own
+- [ ] If `MC_PROXY_AUTH_HEADER` is set: the app is not reachable except through
+      that proxy (bound to loopback or an internal network)
 - [ ] `MC_ENABLE_HSTS=1` is set for HTTPS deployments
 - [ ] `MC_COOKIE_SECURE=1` is set for HTTPS deployments
 - [ ] `MC_COOKIE_SAMESITE=strict`
@@ -77,23 +78,32 @@ Run `bash scripts/security-audit.sh` to check your deployment automatically.
 ## Trusted reverse proxy authentication
 
 `MC_PROXY_AUTH_HEADER` lets a gateway that has already authenticated the user
-pass that identity to Mission Control as an HTTP header. Because identity then
-arrives in a header, **the gateway must strip the client's own copy of these
-headers on every route before injecting its own**:
+pass that identity to Mission Control as an HTTP header. The only credential
+Mission Control checks is `MC_PROXY_AUTH_SECRET` — 32+ random characters that
+the gateway injects as `X-MC-Proxy-Secret`, compared in constant time. A
+missing or shorter secret disables proxy auth entirely and records a
+`proxy_auth_misconfigured` critical event on the first request; requests that
+present proxy headers which fail the check are recorded as
+`proxy_auth_rejected`.
 
-- whatever `MC_PROXY_AUTH_HEADER` names (e.g. `X-User-Email`) — otherwise a
-  client chooses its own identity
-- `X-MC-Proxy-Secret` — otherwise a client can replay a leaked secret
-- `X-Forwarded-For` and `X-Real-IP` — otherwise a client forges the peer address
+Because that secret is the whole of the authentication, two deployment
+controls carry the rest of the weight:
 
-Mission Control requires two independent signals to agree before accepting the
-identity: `MC_PROXY_AUTH_SECRET` (32+ random characters, injected as
-`X-MC-Proxy-Secret`, compared in constant time) and `MC_PROXY_AUTH_TRUSTED_IPS`
-(the gateway addresses allowed to assert identities). With either unset, proxy
-auth is disabled and a `proxy_auth_misconfigured` critical event is recorded on
-the first request; failed attempts are recorded as `proxy_auth_rejected`.
+1. **The gateway must strip the client's own copy of both headers on every
+   route** before injecting its own — whatever `MC_PROXY_AUTH_HEADER` names
+   (e.g. `X-User-Email`) so a client cannot choose its identity, and
+   `X-MC-Proxy-Secret` so a client cannot replay a leaked secret.
+2. **The app must not be reachable except through that gateway.** Bind it to
+   loopback or an internal network. Anyone who can open a connection directly
+   and present the secret is any user they name, from anywhere.
 
-Both signals are header-derived, so neither replaces the stripping rules above.
+There is deliberately no trusted-IP check. `X-Forwarded-For` records the
+address each proxy saw as *its* peer, so it never contains the address of the
+proxy that connected to the app, and no transport peer is available to compare
+against; any "trusted hop" header would just be the shared secret again with
+less entropy. Restricting where connections can originate is a network control,
+not an application one — hence requirement 2.
+
 Setting `MC_PROXY_AUTH_DEFAULT_ROLE` additionally auto-provisions accounts for
 unknown identities — leave it unset unless that is what you want.
 
