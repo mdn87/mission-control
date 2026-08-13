@@ -437,10 +437,15 @@ configuration is part of the security boundary.
 > before awaiting its body, so a revoked admin can begin `POST /api/auth/users`,
 > stall, wait out the deletion, and then create a fresh approved admin.
 >
+> At least five mutation routes in that shape grant access outliving the
+> revocation — a new approved admin, a new session, an approved access request,
+> an agent API key, or the rotated global `API_KEY`.
+>
 > Revocation is therefore effective only once in-flight requests have drained,
-> and it is worth checking the audit log for user-creation events around the
-> revocation. Closing this properly needs an atomic revocation operation and an
-> authority recheck after body parsing, not a documented ordering — see
+> and the audit log is worth checking around it for user creation, access-request
+> approvals, and key issuance. Closing this properly needs an atomic revocation
+> operation and an authority recheck after body parsing, not a documented
+> ordering — see
 > [docs/plans/2026-08-13-user-revocation.md](plans/2026-08-13-user-revocation.md).
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least

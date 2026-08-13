@@ -123,10 +123,11 @@ that role, re-granting the access you just removed. If the user knew the global
 **Deletion is still not complete.** Every mutation route authenticates at the
 top of the handler and only then awaits the request body, so a request begun
 before the deletion carries an authorization decision that deletion cannot
-cancel. A revoked admin can start `POST /api/auth/users`, stall the body, wait
-for the deletion, then finish and create a fresh approved admin. Treat
-revocation as effective only once in-flight requests have drained, and check the
-audit log for user-creation events around the revocation.
+cancel. At least five such routes grant access that outlives the revocation: a
+new approved admin, a new session, an approved access request, an agent API key,
+or the rotated global `API_KEY`. Treat revocation as effective only once
+in-flight requests have drained, and check the audit log around it for user
+creation, access-request approvals, and key issuance — not user creation alone.
 
 Known gaps, which are why the above is a workaround rather than a procedure:
 

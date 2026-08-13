@@ -45,11 +45,25 @@ and creates a fresh approved admin (lines 43-47).
 
 This is the root cause of problem 4 rather than a separate bug, and it is
 architectural: 89 mutation handlers under `src/app/api` match the shape
-"authenticates, then awaits a body". Most of them merely let a revoked user
-complete one more write. Two are escalations, because what they write is
-persistent access: `POST /api/auth/users` (a new approved admin) and
-`PATCH /api/auth/me` (a new session). The other 87 have not been reviewed
-individually.
+"authenticates, then awaits a body" (routes exporting POST/PUT/PATCH/DELETE that
+call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
+`await request.json()`).
+
+Most merely let a revoked user complete one more write. **At least five grant
+persistent access**, which is what makes the shape a revocation problem rather
+than an ordinary race:
+
+| Route | What survives the revocation |
+| --- | --- |
+| `POST /api/auth/users` | A new approved admin (`createUser` defaults `is_approved` to 1) |
+| `PATCH /api/auth/me` | A new session, minted after the operator's deletion |
+| `POST /api/auth/access-requests` | An account approved with a chosen role (`is_approved = 1`, line 108/115) |
+| `POST /api/agents/[id]/keys` | An agent API key (`mca_…`, line 153) |
+| `POST /api/tokens/rotate` | The rotated global `API_KEY`, now known to the revoked admin (line 83) |
+
+These were found by inspecting the routes that obviously touch credentials and
+identity. **The set has not been enumerated exhaustively** — the remaining ~84
+have not been reviewed, and the count above is a floor, not a total.
 
 ## Current workaround
 
