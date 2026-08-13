@@ -55,7 +55,7 @@ architectural: 89 mutation handlers under `src/app/api` match the shape
 call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
 `await request.json()`).
 
-Most merely let a revoked user complete one more write. **Twelve grant access or
+Most merely let a revoked user complete one more write. **Sixteen grant access or
 action that survives account deletion**, which is what makes the shape a revocation problem
 rather than an ordinary race:
 
@@ -72,9 +72,13 @@ rather than an ordinary race:
 | `PUT /api/exec-approvals` | Agent command allowlist patterns written to OpenClaw's persistent `exec-approvals.json` (auth line 114, body await 120, write 130-172); no audit event |
 | `PUT /api/agents/[id]/files` | Overwritten agent instruction files — `AGENTS.md`, `TOOLS.md`, `soul.md` — in the OpenClaw workspace (auth 105, body await 116, write 139-141) |
 | `PUT /api/skills` | Attacker-authored skills written into the OpenClaw or workspace skill roots (auth 408, body await 415) |
+| `PUT /api/settings` | An overwritten `security.api_key_hash` — the route upserts arbitrary keys with no allowlist (auth before `validateBody` at 131, upsert 136-160), and that row outranks the environment key |
+| `PUT /api/gateway-config` | Attacker-chosen values in persistent `openclaw.json` (auth 110, body await 134, write 174-183); only gateway auth fields are blocked |
+| `POST /api/channels` | A messaging channel linked to the attacker's own account via the `whatsapp-link` QR (auth 165, body await 168) |
+| `POST /api/releases/update` | An attacker-selected release tag checked out and rebuilt (auth 32, body await 42, checkout 81-107) |
 | `POST /api/spawn` | A gateway agent run with an attacker-chosen task (auth line 19, body await 28, `sessions_spawn` 86-103), timeout up to an hour; a Mission Control restart does not cancel it |
 
-**Eight of these leave the application**, and none is undone by anything done
+**Eleven of these leave the application**, and none is undone by anything done
 inside Mission Control:
 
 - The host OS account, wherever the platform's account-creation command is
@@ -106,6 +110,13 @@ inside Mission Control:
   OpenClaw workspace, which shape what every later agent turn does.
 - Attacker-authored skills in the OpenClaw or workspace skill roots, same
   reasoning: they are read by agents long after the account is gone.
+- Weakened gateway configuration in `openclaw.json`. Only gateway authentication
+  fields are blocked, so `tools`, `elevated` and `channels` can be loosened and
+  stay loosened.
+- A messaging channel linked to the attacker's own account. Neither deletion nor
+  a restart logs it out; it has to be logged out at the gateway.
+- A rolled-back or partially built release on disk, where release updates are
+  enabled and the source tree is writable.
 
 `PATCH /api/auth/me` mints a session, but **not through the deletion race**: the
 password path reloads `password_hash` from `users` (line ~71) and returns 403
@@ -114,7 +125,7 @@ problem 1 and not for the deletion workaround.
 
 ### What this list is not
 
-The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 → 10 → 12 across successive passes, every step of it
+The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 → 10 → 12 → 16 across successive passes, every step of it
 prompted by review rather than by my own checking. The nine was wrong in both
 directions, and the errors are worth recording so the next reader calibrates
 against them rather than the number:
@@ -139,7 +150,7 @@ against them rather than the number:
 
 The scan keyed on `createUser`/`createSession`/`hashApiKey`/`randomBytes`/
 `INSERT INTO` and similar, so a route granting persistence by other means would
-not appear. Treat twelve as the current floor, not a total.
+not appear. Treat sixteen as the current floor, not a total.
 
 ## Current workaround
 
@@ -174,7 +185,21 @@ Worth establishing here, because neither was checked while filing this:
 - Whether any path other than `PATCH /api/auth/me` can issue a session for an
   already-unapproved user.
 
-## Phase 1a: agent API keys are not revoked at all
+## Phase 1a: artifacts a departing user leaves behind are not revoked at all
+
+Distinct from every race below, and simpler. Two classes are confirmed:
+
+- **Agent API keys.** See below.
+- **Webhooks.** Delivery selects `WHERE enabled = 1 AND workspace_id = ?`
+  (`src/lib/webhooks.ts:180`) with no regard for `created_by`, and `deleteUser`
+  does not touch the table, so a webhook a departing admin configured months ago
+  keeps receiving activity, notification and security events.
+
+Both suggest the same question for the design: what else does a user create that
+outlives their account? Nobody has enumerated that, and it is not the same
+question as the in-flight race.
+
+## Phase 1a-i: agent API keys are not revoked at all
 
 Distinct from every race above, and simpler: `deleteUser` destroys sessions and
 deletes the user row, and touches nothing else. `agent_api_keys` rows survive,
