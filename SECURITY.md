@@ -122,7 +122,8 @@ unset or the gateway no longer asserts that identity — otherwise the next
 attested request finds no row and auto-provisions a fresh approved account with
 that role, re-granting the access you just removed. The global `API_KEY` is not
 per-user and deletion does not affect it, but **do not rotate it yet** — rotation
-comes after ingress is closed, for the reasons below.
+happens under isolation, in the sequence below, and deletion itself is only one
+step of that sequence.
 
 **Deletion is still not complete.** Most mutation routes authenticate at the top
 of the handler and only then await the request body — 89 of them under
@@ -140,39 +141,48 @@ twenty-one, so treat it as a floor and the shape of the problem rather than an
 inventory: **any handler that reaches an external system can be used this way.**
 The response below is organised around that rather than around the list.
 
-**Close ingress first, and keep it closed until every credential is revoked.**
-This is step zero, not a step among others. There is no per-user drain check and
-a stalled body can be held open indefinitely, so while the target can still reach
-the application no ordering of restarts and rotations helps: `PUT /api/settings`
-upserts arbitrary keys with no allowlist and can overwrite
+**Isolate first — Mission Control *and* the gateway — and stay isolated until
+every credential is revoked.** This is step zero. Blocking only Mission Control
+is not enough: a device paired earlier authenticates **directly** to the
+browser-facing gateway with a cached device token (`src/lib/websocket.ts`), so
+that path does not pass through anything you closed. And while the target can
+still reach Mission Control, no ordering of restarts and rotations helps —
+`PUT /api/settings` upserts arbitrary keys with no allowlist and can overwrite
 `security.api_key_hash` with their own hash *after* you rotate, and
 `POST /api/gateways/connect` reads the gateway token after its body await, so it
-captures whatever the replacement is. Block external access at the proxy or
-firewall before touching anything, and do not reopen it until the credential
-steps below are all done — including agent keys, which no rotation invalidates.
+captures whatever the replacement is.
 
-With ingress closed:
+While isolated:
 
-1. **Delete the account**, having first confirmed `MC_PROXY_AUTH_DEFAULT_ROLE`
-   is unset or the gateway no longer asserts that identity.
-2. **Restart the Mission Control process.** This is what ends handlers that were
+1. **Quarantine the target's queued and recurring tasks before restarting.**
+   The scheduler's first scans run 10 and 20 seconds after startup
+   (`src/lib/scheduler.ts`), so a restart with their tasks still queued executes
+   attacker-authored prompts through the gateway, provider APIs or host CLIs
+   while the rest of this is still in progress. Deleting the user does not remove
+   those rows.
+2. **Delete the account — and any account whose credentials the target created,
+   reset, or saw.** `POST /api/auth/users` takes a caller-chosen password, so a
+   second admin they created earlier (or through a request that completed before
+   isolation) stays usable: no rotation here invalidates a local password.
+3. **Restart the Mission Control process.** This is what ends handlers that were
    already authorized; nothing else in this list does.
-3. **Rotate the global key with `POST /api/tokens/rotate`.** Editing the
+4. **Rotate the global key with `POST /api/tokens/rotate`.** Editing the
    `API_KEY` environment variable is **not** a rotation where a
    `settings.security.api_key_hash` row exists — `matchesGlobalApiKey` gives that
    row precedence and only falls back to the environment when it is absent. To
    rotate by environment, delete that row as part of the change.
-4. **Rotate the gateway credential.** `POST /api/gateways/connect` returns the
-   existing token unchanged and writes no audit event, so disclosure leaves the
-   gateway's state looking normal. Inspection proves nothing; assume it leaked if
-   such a request may have been in flight.
-5. **Revoke every agent API key and webhook the departing user created or saw** —
-   not only ones from the window. `deleteUser` touches neither table, the agent
-   key lookup ignores `created_by`, webhook delivery selects only on `enabled`
-   and workspace, and an agent key can carry the `admin` scope. A key or webhook
+5. **Rotate the credential of every registered gateway, not just the primary.**
+   `POST /api/gateways/connect` accepts any registered gateway id and returns
+   that gateway's stored token to operator+ callers; only the primary uses the
+   detected OpenClaw credential. Enumerate them.
+6. **Revoke every credential the target holds or created**: agent API keys,
+   webhooks, and **paired devices** (`device.token.revoke` via `/api/nodes`).
+   `deleteUser` touches none of these tables, the agent key lookup ignores
+   `created_by`, webhook delivery selects only on `enabled` and workspace, and a
+   paired device token is what lets them reach the gateway directly. Any of these
    from months ago outlives every step above.
 
-Only then reopen ingress.
+Only then lift the isolation.
 
 **Then review what may have been left behind.** Mission Control orchestrates
 other systems, so a request that completed during the window can have effects

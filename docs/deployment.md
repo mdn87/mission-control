@@ -447,30 +447,35 @@ configuration is part of the security boundary.
 > so treat it as the shape of the problem rather than an inventory: any handler
 > that reaches an external system can be used this way.
 >
-> **Close ingress first — at the proxy or firewall — and keep it closed until
-> every credential step below is done.** While the target can still reach the
-> application, no ordering of restarts and rotations helps: `PUT /api/settings`
-> upserts arbitrary keys with no allowlist and can overwrite
-> `security.api_key_hash` with their own hash *after* you rotate, and
-> `gateways/connect` reads the gateway token after its body await, so it captures
-> whatever the replacement is.
+> **Isolate Mission Control *and* the gateway first, and stay isolated until every
+> credential is revoked.** Blocking only Mission Control is insufficient — a
+> previously paired device authenticates directly to the browser-facing gateway
+> with a cached device token, bypassing anything you closed. And while the target
+> can still reach Mission Control, no ordering of restarts and rotations helps:
+> `PUT /api/settings` upserts arbitrary keys with no allowlist and can overwrite
+> `security.api_key_hash` after you rotate, and `gateways/connect` reads its token
+> after the body await.
 >
-> With ingress closed: delete the account; **restart** Mission Control, which is
-> the only step that ends already-authorized handlers; rotate the global key with
-> `POST /api/tokens/rotate` (editing `API_KEY` is not a rotation where a
-> `settings.security.api_key_hash` row exists — that row wins until deleted);
-> rotate the gateway credential; then revoke **every agent API key and webhook
-> the departing user created or saw**, not only ones from the window —
-> `deleteUser` touches neither table, the key lookup ignores `created_by`, and an
-> agent key can carry the `admin` scope. Only then reopen ingress.
+> While isolated, in order: **quarantine the target's queued and recurring tasks**
+> (the scheduler's first scans run 10 and 20 seconds after startup, so restarting
+> with them queued executes attacker-authored prompts mid-procedure); **delete the
+> account and any account whose credentials the target created, reset or saw** —
+> `POST /api/auth/users` takes a caller-chosen password and no rotation
+> invalidates it; **restart**, which is the only step that ends already-authorized
+> handlers; **rotate the global key** with `POST /api/tokens/rotate` (editing
+> `API_KEY` is not a rotation where a `settings.security.api_key_hash` row
+> exists); **rotate every registered gateway's credential**, not just the primary,
+> since `gateways/connect` serves any registered id; and **revoke every agent API
+> key, webhook and paired device** the target holds or created — `deleteUser`
+> touches none of those tables. Only then lift the isolation.
 >
 > Afterwards, review what may have been left behind outside Mission Control:
 > agent runs and queued turns at the gateway (`spawn`, `wake`, `broadcast`), a
 > gateway process started by `gateways/control`, OpenClaw's `exec-approvals.json`,
 > `cron/jobs.json`, `openclaw.json`, agent instruction files, skill roots and
 > `.env` (`integrations` writes there, including `OPENCLAW_GATEWAY_TOKEN`), linked
-> channels and paired devices, GitHub activity from `POST /api/github`, commands
-> accepted by the Lugos operator service, the deployed release, and host accounts.
+> channels, GitHub activity from `POST /api/github`, commands accepted by the
+> Lugos operator service, the deployed release, and host accounts.
 > See [SECURITY.md](../SECURITY.md#trusted-reverse-proxy-authentication) for the
 > full response and why this list is a floor rather than an inventory.
 >

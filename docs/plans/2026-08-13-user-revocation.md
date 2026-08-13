@@ -229,6 +229,33 @@ involved.
 Any revocation operation must revoke that user's agent keys, and the UI needs a
 way to see which keys a given user created.
 
+## Phase 1c: what a revocation procedure has to cover
+
+Review of the documented procedure — as opposed to the route list — found four
+things that let a target back in after it completes, or run their work during it.
+All four are design requirements for Phase 2, not documentation problems:
+
+- **Paired device tokens bypass Mission Control entirely.** A device paired
+  earlier authenticates directly to the browser-facing gateway with a cached
+  token (`src/lib/websocket.ts:284`), so isolating Mission Control does not
+  isolate them, and rotating the gateway bearer credential does not revoke the
+  device. `/api/nodes` exposes `device.token.revoke` separately.
+- **Alternate accounts survive.** `POST /api/auth/users` takes a caller-chosen
+  password, so a second admin the target created earlier remains usable; no
+  rotation invalidates a local password, and deleting one account does not find
+  the others.
+- **The restart runs their queued work.** The scheduler's first scans fire 10 and
+  20 seconds after startup (`src/lib/scheduler.ts:368,386`), so restarting with
+  the target's assigned or recurring tasks still queued executes attacker-authored
+  prompts through the gateway, provider APIs or host CLIs — during the procedure.
+- **Multi-gateway deployments need every credential rotated.**
+  `POST /api/gateways/connect` serves any registered gateway id to operator+
+  callers; only the primary uses the detected OpenClaw credential.
+
+An atomic revocation operation should therefore cover: sessions, agent keys,
+webhooks, paired devices, queued and recurring tasks, accounts the target
+created, and every gateway credential they could read.
+
 ## Phase 1b: there is no drain primitive
 
 "Wait for in-flight requests to finish" appears in the current documentation
