@@ -40,59 +40,42 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Must resolve values the same way scripts/load-env.sh does, or the audit will
-# grade a different string than the one the server actually starts with: quoted
-# values are taken verbatim, unquoted ones have a whitespace-preceded inline
-# comment stripped.
-trim_env_value() {
-  local value="$1"
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-  if [[ ${#value} -ge 2 ]]; then
-    if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]] ||
-       [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
-      printf '%s' "${value:1:${#value}-2}"
-      return
-    fi
-  fi
-  value="$(printf '%s' "$value" | sed 's/[[:space:]]#.*$//')"
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-  printf '%s' "$value"
+# Read the env file through scripts/load-env.sh's own parser rather than a
+# second implementation. The audit exists to report what the server will
+# actually run with, so any divergence here is a false report: a private copy
+# previously missed inline comments and then `export ` prefixes, certifying
+# settings the server never saw.
+#
+# Sourcing the loader only defines functions. The env file itself is still never
+# evaluated — values reach this script as handler arguments, so PATH, BASH_ENV,
+# or command hooks in it cannot change how the audit executes.
+AUDIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./load-env.sh
+. "$AUDIT_DIR/load-env.sh"
+
+# Capture only the settings this audit reads; everything else is discarded.
+mc_audit_capture() {
+  case "$1" in
+    AUTH_PASS) AUTH_PASS="$2" ;;
+    API_KEY) API_KEY="$2" ;;
+    MC_ALLOWED_HOSTS) MC_ALLOWED_HOSTS="$2" ;;
+    MC_ALLOW_ANY_HOST) MC_ALLOW_ANY_HOST="$2" ;;
+    MC_COOKIE_SECURE) MC_COOKIE_SECURE="$2" ;;
+    MC_COOKIE_SAMESITE) MC_COOKIE_SAMESITE="$2" ;;
+    MC_ENABLE_HSTS) MC_ENABLE_HSTS="$2" ;;
+    MC_DISABLE_RATE_LIMIT) MC_DISABLE_RATE_LIMIT="$2" ;;
+    MC_PROXY_AUTH_HEADER) MC_PROXY_AUTH_HEADER="$2" ;;
+    MC_PROXY_AUTH_SECRET) MC_PROXY_AUTH_SECRET="$2" ;;
+    MC_PROXY_AUTH_TRUSTED_IPS) MC_PROXY_AUTH_TRUSTED_IPS="$2" ;;
+    MC_PROXY_AUTH_DEFAULT_ROLE) MC_PROXY_AUTH_DEFAULT_ROLE="$2" ;;
+  esac
 }
 
-if [[ -f "$ENV_FILE" ]]; then
-  while IFS='=' read -r raw_key raw_value || [[ -n "$raw_key$raw_value" ]]; do
-    raw_key="${raw_key%$'\r'}"
-    raw_value="${raw_value%$'\r'}"
-    key="${raw_key#"${raw_key%%[![:space:]]*}"}"
-    key="${key%"${key##*[![:space:]]}"}"
-    [[ -z "$key" || "$key" == \#* ]] && continue
-    # scripts/load-env.sh accepts an optional `export ` prefix; without stripping
-    # it here the audit would grade an entirely different set of settings than
-    # the ones the server starts with.
-    if [[ "$key" == export[[:space:]]* ]]; then
-      key="${key#export}"
-      key="${key#"${key%%[![:space:]]*}"}"
-      key="${key%"${key##*[![:space:]]}"}"
-      [[ -z "$key" ]] && continue
-    fi
-    value="$(trim_env_value "$raw_value")"
-    case "$key" in
-      AUTH_PASS) AUTH_PASS="$value" ;;
-      API_KEY) API_KEY="$value" ;;
-      MC_ALLOWED_HOSTS) MC_ALLOWED_HOSTS="$value" ;;
-      MC_ALLOW_ANY_HOST) MC_ALLOW_ANY_HOST="$value" ;;
-      MC_COOKIE_SECURE) MC_COOKIE_SECURE="$value" ;;
-      MC_COOKIE_SAMESITE) MC_COOKIE_SAMESITE="$value" ;;
-      MC_ENABLE_HSTS) MC_ENABLE_HSTS="$value" ;;
-      MC_DISABLE_RATE_LIMIT) MC_DISABLE_RATE_LIMIT="$value" ;;
-      MC_PROXY_AUTH_HEADER) MC_PROXY_AUTH_HEADER="$value" ;;
-      MC_PROXY_AUTH_SECRET) MC_PROXY_AUTH_SECRET="$value" ;;
-      MC_PROXY_AUTH_TRUSTED_IPS) MC_PROXY_AUTH_TRUSTED_IPS="$value" ;;
-      MC_PROXY_AUTH_DEFAULT_ROLE) MC_PROXY_AUTH_DEFAULT_ROLE="$value" ;;
-    esac
-  done < "$ENV_FILE"
+# A file the loader rejects is one the server cannot start with, so refusing to
+# grade it is more useful than grading the lines that happened to parse.
+if ! mc_env_parse_file "$ENV_FILE" mc_audit_capture; then
+  echo "  [FAIL] $ENV_FILE cannot be parsed by scripts/load-env.sh; the server will not start with it" >&2
+  exit 2
 fi
 
 echo "=== Mission Control Security Audit ==="

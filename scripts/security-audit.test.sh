@@ -225,4 +225,35 @@ if bash "$AUDIT" --env-file "$NO_HOSTS_ENV" --strict >/dev/null 2>&1; then
   exit 1
 fi
 
+# The audit and the loader must agree on every parsing quirk. A private copy of
+# these rules drifted twice; this asserts agreement directly rather than
+# re-testing each quirk and hoping the list is complete.
+AGREE_ENV="$TMP_DIR/agreement.env"
+cat > "$AGREE_ENV" <<'EOF'
+export MC_ALLOWED_HOSTS=a.example,b.example   # trailing comment
+AUTH_PASS="a secure # password"
+  MC_COOKIE_SAMESITE=strict
+API_KEY=test-api-key
+MC_COOKIE_SECURE=1
+MC_ENABLE_HSTS=1
+MC_DISABLE_RATE_LIMIT=0
+EOF
+chmod 600 "$AGREE_ENV"
+
+loader_hosts="$( . "$ROOT_DIR/scripts/load-env.sh"; load_env_file "$AGREE_ENV" >/dev/null 2>&1; printf '%s' "$MC_ALLOWED_HOSTS" )"
+loader_pass="$( . "$ROOT_DIR/scripts/load-env.sh"; load_env_file "$AGREE_ENV" >/dev/null 2>&1; printf '%s' "$AUTH_PASS" )"
+agree_output="$(bash "$AUDIT" --env-file "$AGREE_ENV" || true)"
+grep -Fq "[PASS] MC_ALLOWED_HOSTS is configured: $loader_hosts" <<< "$agree_output"
+grep -Fq "[PASS] AUTH_PASS is set to a non-default value (${#loader_pass} chars)" <<< "$agree_output"
+
+# A file the loader refuses is one the server cannot start with, so the audit
+# must decline to grade it rather than scoring the lines that happened to parse.
+BROKEN_ENV="$TMP_DIR/broken.env"
+printf 'AUTH_PASS="unterminated\nMC_ALLOWED_HOSTS=localhost\n' > "$BROKEN_ENV"
+chmod 600 "$BROKEN_ENV"
+if bash "$AUDIT" --env-file "$BROKEN_ENV" >/dev/null 2>&1; then
+  echo 'Expected the audit to refuse an env file that load-env.sh rejects' >&2
+  exit 1
+fi
+
 echo 'security-audit tests passed'
