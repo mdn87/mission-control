@@ -440,44 +440,39 @@ configuration is part of the security boundary.
 > revoked admin can begin `POST /api/auth/users`, stall, wait out the deletion,
 > and then create a fresh approved admin.
 >
-> Twelve mutation routes in that shape grant access outliving the revocation, and
-> **eight of them leave the application**. Wherever the platform's account-creation
-> command is reachable — passwordless sudo for `useradd` on Linux, `sysadminctl
-> -addUser` on macOS, which unlike Linux does apply the requested password —
-> `POST /api/super/os-users` creates a host OS account. `POST /api/gateways/connect`
-> returns the real gateway bearer credential to operator+ callers; `POST /api/cron`
-> writes an enabled OpenClaw cron job that keeps running agent turns;
-> `POST /api/nodes` approves a gateway device pairing whose device holds its own
-> token; `POST /api/spawn` submits an agent run to the gateway that a Mission
-> Control restart cannot cancel. The rest mint a new approved admin, an approved
-> access request, an agent API key, or a webhook aimed at a chosen URL.
+> Review has so far found **twenty-one** such routes, **fourteen** of which reach
+> outside Mission Control — the gateway, OpenClaw's persistent files, linked
+> messaging accounts, GitHub, the Lugos operator service, the host, and the
+> deployed release. That count rose at every review pass, from two to twenty-one,
+> so treat it as the shape of the problem rather than an inventory: any handler
+> that reaches an external system can be used this way.
 >
-> **Restart the Mission Control process after deleting the account and before
-> rotating anything.** There is no drain check an operator can consult, and a
-> stalled request can be held open indefinitely — and rotating first is not a way
-> round it, because `gateways/connect` reads the token *after* its body await, so
-> a request resuming later discloses the replacement too. A restart is the only
-> step that deterministically ends an already-authorized handler.
+> **Close ingress first — at the proxy or firewall — and keep it closed until
+> every credential step below is done.** While the target can still reach the
+> application, no ordering of restarts and rotations helps: `PUT /api/settings`
+> upserts arbitrary keys with no allowlist and can overwrite
+> `security.api_key_hash` with their own hash *after* you rotate, and
+> `gateways/connect` reads the gateway token after its body await, so it captures
+> whatever the replacement is.
 >
-> Then rotate the gateway credential (its state looks normal even after
-> disclosure, so inspection proves nothing) and the global key via
-> `POST /api/tokens/rotate` — only after the deletion and restart, since that
-> endpoint needs no body and returns the new key in plaintext to any surviving
-> admin session. Changing the `API_KEY` environment variable is not a rotation
-> where a `settings.security.api_key_hash` row exists; that row takes precedence
-> and the old key stays valid until it is removed.
+> With ingress closed: delete the account; **restart** Mission Control, which is
+> the only step that ends already-authorized handlers; rotate the global key with
+> `POST /api/tokens/rotate` (editing `API_KEY` is not a rotation where a
+> `settings.security.api_key_hash` row exists — that row wins until deleted);
+> rotate the gateway credential; then revoke **every agent API key and webhook
+> the departing user created or saw**, not only ones from the window —
+> `deleteUser` touches neither table, the key lookup ignores `created_by`, and an
+> agent key can carry the `admin` scope. Only then reopen ingress.
 >
-> Restart **again** after rotating the global key and before rotating the gateway
-> credential: the first restart does not lock out someone holding the old global
-> key, and they can stall `gateways/connect` to capture the replacement gateway
-> token.
->
-> **Cancel any agent runs spawned during the window** at the gateway — the
-> restart does not reach them — review OpenClaw's `exec-approvals.json`, the
-> agent workspace instruction files and skill roots for changes made during it,
-> and **revoke every agent API key the departing user created or saw**:
-> `deleteUser` does not touch `agent_api_keys`, the lookup ignores `created_by`,
-> and such a key can carry the `admin` scope.
+> Afterwards, review what may have been left behind outside Mission Control:
+> agent runs and queued turns at the gateway (`spawn`, `wake`, `broadcast`), a
+> gateway process started by `gateways/control`, OpenClaw's `exec-approvals.json`,
+> `cron/jobs.json`, `openclaw.json`, agent instruction files, skill roots and
+> `.env` (`integrations` writes there, including `OPENCLAW_GATEWAY_TOKEN`), linked
+> channels and paired devices, GitHub activity from `POST /api/github`, commands
+> accepted by the Lugos operator service, the deployed release, and host accounts.
+> See [SECURITY.md](../SECURITY.md#trusted-reverse-proxy-authentication) for the
+> full response and why this list is a floor rather than an inventory.
 >
 > The audit log does not record webhook creation, agent key issuance, cron job
 > creation, gateway connect, device pairing, or exec-approval changes — inspect

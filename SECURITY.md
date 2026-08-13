@@ -125,110 +125,87 @@ per-user and deletion does not affect it, but **do not rotate it yet** — rotat
 comes after ingress is closed, for the reasons below.
 
 **Deletion is still not complete.** Most mutation routes authenticate at the top
-of the handler and only then await the request body — 89 of them, though a few
-such as `POST /api/tokens/rotate` read no body at all — so a request begun before
-the deletion carries an authorization decision that deletion cannot cancel. Sixteen
-of those routes grant access or action that outlives it: a new approved admin, an
-approved access request, an agent API key, a webhook aimed at an attacker's URL,
-an OpenClaw cron job, a paired gateway device with its own token, a spawned
-gateway agent run, a persistent agent command allowlist, overwritten agent instruction files,
-attacker-authored skills, weakened gateway configuration, a linked messaging
-channel, a rolled-back release, an overwritten global-key hash, a host OS
-account, and the gateway bearer credential.
+of the handler and only then await the request body — 89 of them under
+`src/app/api`, though a few such as `POST /api/tokens/rotate` read no body at all.
+The authorization decision is therefore made before anything the operator does,
+and a request begun before the deletion carries it through to completion
+afterwards. Nothing in the application cancels an already-authorized handler.
 
-**Eleven of those leave the application**, and nothing done inside Mission Control
-undoes any of them. Wherever the platform's account-creation command is available
-to the process, `POST /api/super/os-users` creates a **host OS account**. On Linux
-that is passwordless sudo for `useradd`, and the requested password is applied by
-a separate `chpasswd` call whose failure is ignored — so without that privilege
-too, the account exists with no usable password. On macOS it is `sysadminctl
--addUser`, tried directly and then under sudo, and the requested password is set
-in the same call, so the attacker's password does take effect.
-`POST /api/gateways/connect` returns the **real gateway bearer credential** to
-operator+ callers, which authenticates to the separate OpenClaw gateway.
-`POST /api/cron` writes an **enabled OpenClaw cron job** with an attacker-chosen
-schedule and agent-turn message, which keeps running afterwards. `POST /api/nodes`
-approves a **gateway device pairing**, and the paired device holds its own token —
-revoke it at the gateway, since deleting the Mission Control user does not.
-`POST /api/spawn` submits an **agent run to the gateway** with an attacker-chosen
-task and a timeout of up to an hour; once the gateway has accepted it, restarting
-Mission Control does not cancel it, so find and cancel any runs spawned during
-the window. `PUT /api/exec-approvals` writes **agent command allowlists** to
-OpenClaw's persistent `exec-approvals.json`, so wildcard patterns added during the
-window let agents run matching commands without approval indefinitely — neither
-deletion nor a restart reverts that file, and the route writes no audit event.
-`PUT /api/agents/[id]/files` overwrites **agent instruction files** (`AGENTS.md`,
-`TOOLS.md`, `soul.md`) in the OpenClaw workspace, and `PUT /api/skills` writes
-**attacker-authored skills** into the skill roots; both shape what agents do
-afterwards and survive deletion and restart. `PUT /api/gateway-config` writes
-attacker-chosen values into `openclaw.json` — only gateway auth fields are
-blocked, so `tools`, `elevated`, and `channels` can be weakened.
-`POST /api/channels` returns a WhatsApp link QR, and a scanned link ties the
-attacker's own account to the gateway. `POST /api/releases/update` checks out an
-attacker-selected release tag and rebuilds.
+Review has so far identified **twenty-one** such routes that grant access or
+leave an effect outliving the revocation, **fourteen** of which reach outside
+Mission Control entirely — the gateway, OpenClaw's persistent files, linked
+messaging accounts, GitHub, the Lugos operator service, the host, and the
+deployed release. That count has risen at every review pass, from two to
+twenty-one, so treat it as a floor and the shape of the problem rather than an
+inventory: **any handler that reaches an external system can be used this way.**
+The response below is organised around that rather than around the list.
 
-**Cut the in-flight requests before rotating anything.** There is no per-user
-request registry and no drain check, so "wait for requests to finish" is not
-something an operator can verify — a stalled body can be held open as long as the
-attacker likes. Worse, rotating first does not help: `POST /api/gateways/connect`
-reads the gateway token *after* its body await, so a request that resumes after
-your rotation discloses the **replacement** token. Restart the Mission Control
-process (or otherwise terminate its connections) after deleting the account and
-before rotating credentials. That is the only step here that deterministically
-ends an already-authorized handler.
+**Close ingress first, and keep it closed until every credential is revoked.**
+This is step zero, not a step among others. There is no per-user drain check and
+a stalled body can be held open indefinitely, so while the target can still reach
+the application no ordering of restarts and rotations helps: `PUT /api/settings`
+upserts arbitrary keys with no allowlist and can overwrite
+`security.api_key_hash` with their own hash *after* you rotate, and
+`POST /api/gateways/connect` reads the gateway token after its body await, so it
+captures whatever the replacement is. Block external access at the proxy or
+firewall before touching anything, and do not reopen it until the credential
+steps below are all done — including agent keys, which no rotation invalidates.
 
-Then, in this order:
+With ingress closed:
 
-- **Rotate the gateway credential.** `POST /api/gateways/connect` returns the
-  existing token unchanged and writes no audit event, so a disclosed credential
-  leaves the gateway's state looking entirely normal. Inspection cannot tell you
-  whether it leaked; assume it did if such a request may have been in flight.
-- **Rotate the global key with `POST /api/tokens/rotate`** — after the deletion
-  and restart, never before, since that endpoint needs no request body and
-  returns the new key in plaintext to any live admin session. Editing the
-  `API_KEY` environment variable is **not** a rotation on a deployment that has
-  ever rotated from the dashboard: `matchesGlobalApiKey` gives the
-  `settings.security.api_key_hash` row precedence and only falls back to the
-  environment when no such row exists, so the old database-backed key stays valid
-  behind a changed env var. To rotate by environment instead, delete that
-  settings row as part of the change.
-- **Close ingress before rotating anything, and keep it closed until every
-  rotation is done.** No ordering of restarts and rotations is sufficient on its
-  own. `PUT /api/settings` upserts arbitrary keys with no allowlist, so a stalled
-  request can overwrite `security.api_key_hash` with the attacker's own hash
-  *after* you rotate — and `matchesGlobalApiKey` gives that row precedence, so
-  the procedure finishes with their key active. `POST /api/gateways/connect`
-  reads the gateway token after its body await, so it likewise captures the
-  replacement. Block external access at the proxy or firewall for the duration;
-  that is the only step that removes the attacker's ability to act.
-- **Cancel any agent runs spawned during the window**, at the gateway. The
-  restart does not reach them.
-- **Review OpenClaw's `exec-approvals.json`** and remove allowlist entries added
-  during the window, and the agent workspace's `AGENTS.md`, `TOOLS.md`,
-  `soul.md` and skill roots for instructions written during it.
-- **Disable or delete every webhook the departing user created or saw**, not
-  only ones added during the window. Delivery selects on `enabled = 1` and
-  workspace with no regard for `created_by`, and `deleteUser` does not touch the
-  table, so a webhook they configured months ago keeps receiving activity,
-  notification and security events.
-- **Verify the deployed revision** if release updates are enabled — a stalled
-  `POST /api/releases/update` can leave an older or partially built release on
-  disk.
-- **Review gateway configuration and linked channels** for changes made during
-  the window, and log out any channel account linked during it.
-- **Revoke every agent API key the departing user created or saw** — not only
-  keys minted during the window. `deleteUser` removes sessions and the user row
-  and nothing else: `agent_api_keys` rows survive, the lookup checks only the
-  hash, expiry and `revoked_at` without regard to `created_by`, and such a key
-  can carry the `admin` scope. A key issued months earlier therefore outlives
-  every step above.
-- **Do not rely on the audit log alone.** Webhook creation, agent API key
-  issuance, cron job creation, gateway connect, device pairing, and exec-approval
-  changes write no audit events. Inspect the `webhooks` and `agent_api_keys`
-  tables, OpenClaw's `cron/jobs.json` and `exec-approvals.json`, and the gateway's
-  paired-device list directly, alongside the audit log for user creation,
-  access-request approvals and agent spawns, and the host's account list on
-  super-admin deployments.
+1. **Delete the account**, having first confirmed `MC_PROXY_AUTH_DEFAULT_ROLE`
+   is unset or the gateway no longer asserts that identity.
+2. **Restart the Mission Control process.** This is what ends handlers that were
+   already authorized; nothing else in this list does.
+3. **Rotate the global key with `POST /api/tokens/rotate`.** Editing the
+   `API_KEY` environment variable is **not** a rotation where a
+   `settings.security.api_key_hash` row exists — `matchesGlobalApiKey` gives that
+   row precedence and only falls back to the environment when it is absent. To
+   rotate by environment, delete that row as part of the change.
+4. **Rotate the gateway credential.** `POST /api/gateways/connect` returns the
+   existing token unchanged and writes no audit event, so disclosure leaves the
+   gateway's state looking normal. Inspection proves nothing; assume it leaked if
+   such a request may have been in flight.
+5. **Revoke every agent API key and webhook the departing user created or saw** —
+   not only ones from the window. `deleteUser` touches neither table, the agent
+   key lookup ignores `created_by`, webhook delivery selects only on `enabled`
+   and workspace, and an agent key can carry the `admin` scope. A key or webhook
+   from months ago outlives every step above.
+
+Only then reopen ingress.
+
+**Then review what may have been left behind.** Mission Control orchestrates
+other systems, so a request that completed during the window can have effects
+outside it that no rotation reaches. The list below is what review has found so
+far; treat it as illustrative, not complete. Eighteen rounds of review kept
+adding to it, and the underlying property — authorization is decided before the
+body is read, in most of the ~89 mutation handlers — means any handler that
+reaches an external system belongs here.
+
+- **The gateway**: agent runs from `POST /api/spawn`, and turns queued through
+  existing sessions by `POST /api/agents/[id]/wake` or
+  `POST /api/tasks/[id]/broadcast`. Cancel them at the gateway; a Mission Control
+  restart does not retract accepted work. Also check whether a gateway process
+  was started by `POST /api/gateways/control` that was meant to stay stopped.
+- **OpenClaw's persistent files**: `exec-approvals.json` allowlists,
+  `cron/jobs.json` jobs, `openclaw.json` configuration (only gateway auth fields
+  are blocked, so `tools`, `elevated` and `channels` can be weakened), the agent
+  workspace's `AGENTS.md`/`TOOLS.md`/`soul.md`, the skill roots, and the OpenClaw
+  `.env` — `PUT /api/integrations` writes variables there, including advertised
+  credentials such as `OPENCLAW_GATEWAY_TOKEN`. Restore before restarting the
+  gateway.
+- **Linked accounts and devices**: channels linked via `POST /api/channels`, and
+  devices paired via `POST /api/nodes`. Both hold their own credentials at the
+  gateway and must be revoked there.
+- **Third-party systems**: `POST /api/github` uses the stored token to comment,
+  close issues and initialize labels, and `POST /api/lugos/commands` submits
+  approvals and handoffs to the Lugos operator service. Those effects persist
+  wherever they landed and no local rotation reaches them.
+- **The deployment itself**: `POST /api/releases/update` can leave an older or
+  partially built release on disk, and `POST /api/super/os-users` a host account.
+- **The audit log will not show most of this.** Webhook creation, agent key
+  issuance, cron creation, gateway connect, device pairing and exec-approval
+  changes write no audit events. Inspect the underlying tables and files.
 
 Known gaps, which are why the above is a workaround rather than a procedure:
 

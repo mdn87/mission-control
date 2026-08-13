@@ -55,7 +55,7 @@ architectural: 89 mutation handlers under `src/app/api` match the shape
 call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
 `await request.json()`).
 
-Most merely let a revoked user complete one more write. **Sixteen grant access or
+Most merely let a revoked user complete one more write. **Twenty-one grant access or
 action that survives account deletion**, which is what makes the shape a revocation problem
 rather than an ordinary race:
 
@@ -76,9 +76,14 @@ rather than an ordinary race:
 | `PUT /api/gateway-config` | Attacker-chosen values in persistent `openclaw.json` (auth 110, body await 134, write 174-183); only gateway auth fields are blocked |
 | `POST /api/channels` | A messaging channel linked to the attacker's own account via the `whatsapp-link` QR (auth 165, body await 168) |
 | `POST /api/releases/update` | An attacker-selected release tag checked out and rebuilt (auth 32, body await 42, checkout 81-107) |
+| `PUT /api/integrations` | Attacker-selected variables written into OpenClaw's persistent `.env` (auth 473, body await 478, write 500-515); the blocklist does not cover `OPENCLAW_GATEWAY_TOKEN` or provider tokens |
+| `POST /api/agents/[id]/wake`, `POST /api/tasks/[id]/broadcast` | Agent turns queued through existing gateway sessions; a restart does not retract accepted work |
+| `POST /api/github` | Issue comments, closures and label initialisation performed on GitHub with the stored token (64-90, 255-301, 428-437) |
+| `POST /api/gateways/control` | A gateway process started that was meant to stay stopped; in Docker the Hermes branch spawns it detached (218-275) |
+| `POST /api/lugos/commands` | `approval.request`, `mail.handoff` or `task.approve` accepted by the separate Lugos operator service |
 | `POST /api/spawn` | A gateway agent run with an attacker-chosen task (auth line 19, body await 28, `sessions_spawn` 86-103), timeout up to an hour; a Mission Control restart does not cancel it |
 
-**Eleven of these leave the application**, and none is undone by anything done
+**Fourteen of these leave the application**, and none is undone by anything done
 inside Mission Control:
 
 - The host OS account, wherever the platform's account-creation command is
@@ -117,6 +122,17 @@ inside Mission Control:
   a restart logs it out; it has to be logged out at the gateway.
 - A rolled-back or partially built release on disk, where release updates are
   enabled and the source tree is writable.
+- Variables in OpenClaw's `.env`, including advertised credentials such as
+  `OPENCLAW_GATEWAY_TOKEN` — the blocklist on `PUT /api/integrations` does not
+  cover them. Restore before restarting the gateway.
+- Agent turns queued through existing gateway sessions by `wake` or `broadcast`,
+  which the gateway executes regardless of what happens to Mission Control.
+- GitHub state — comments, closed issues, initialised labels — written with the
+  stored integration token, which no local rotation reaches.
+- Commands accepted by the Lugos operator service (`approval.request`,
+  `mail.handoff`, `task.approve`), which that service has already acted on.
+- A gateway process started by `gateways/control` that was meant to stay
+  stopped.
 
 `PATCH /api/auth/me` mints a session, but **not through the deletion race**: the
 password path reloads `password_hash` from `users` (line ~71) and returns 403
@@ -125,7 +141,7 @@ problem 1 and not for the deletion workaround.
 
 ### What this list is not
 
-The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 → 10 → 12 → 16 across successive passes, every step of it
+The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 → 10 → 12 → 16 → 21 across successive passes, every step of it
 prompted by review rather than by my own checking. The nine was wrong in both
 directions, and the errors are worth recording so the next reader calibrates
 against them rather than the number:
@@ -150,7 +166,8 @@ against them rather than the number:
 
 The scan keyed on `createUser`/`createSession`/`hashApiKey`/`randomBytes`/
 `INSERT INTO` and similar, so a route granting persistence by other means would
-not appear. Treat sixteen as the current floor, not a total.
+not appear. Treat twenty-one as the current floor, not a total — and note that
+the floor has risen at every single pass, which is the more useful fact.
 
 ## Current workaround
 
