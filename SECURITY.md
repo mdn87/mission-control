@@ -25,7 +25,12 @@ We will acknowledge receipt within 48 hours and aim to provide a fix or mitigati
 Mission Control handles authentication credentials and API keys. When deploying:
 
 - Always set strong values for `AUTH_PASS` and `API_KEY`.
-- Use `MC_ALLOWED_HOSTS` to restrict network access in production.
+- Set `MC_ALLOWED_HOSTS` in production. Host checking fails closed, so anything
+  beyond `localhost`, `127.0.0.1`, `::1`, and the machine hostname is answered
+  with `403 Forbidden` until it is listed here.
+- If you enable header-based proxy authentication, configure the reverse proxy
+  to strip client-supplied headers first — see [Trusted reverse proxy
+  authentication](#trusted-reverse-proxy-authentication) below.
 - Keep `.env` files out of version control (already in `.gitignore`).
 - Enable `MC_COOKIE_SECURE=1` when serving over HTTPS.
 - Review the [Environment Variables](README.md#environment-variables) section for all security-relevant configuration.
@@ -43,6 +48,11 @@ Run `bash scripts/security-audit.sh` to check your deployment automatically.
 ### Network
 - [ ] `MC_ALLOWED_HOSTS` is configured (not `MC_ALLOW_ANY_HOST=1`)
 - [ ] Dashboard is behind a reverse proxy with TLS (Caddy, nginx, Tailscale)
+- [ ] If `MC_PROXY_AUTH_HEADER` is set: `MC_PROXY_AUTH_SECRET` is 32+ characters
+- [ ] If `MC_PROXY_AUTH_HEADER` is set: the proxy strips client-supplied
+      identity and `X-MC-Proxy-Secret` headers before injecting its own
+- [ ] If `MC_PROXY_AUTH_HEADER` is set: the app is not reachable except through
+      that proxy (bound to loopback or an internal network)
 - [ ] `MC_ENABLE_HSTS=1` is set for HTTPS deployments
 - [ ] `MC_COOKIE_SECURE=1` is set for HTTPS deployments
 - [ ] `MC_COOKIE_SAMESITE=strict`
@@ -64,5 +74,57 @@ Run `bash scripts/security-audit.sh` to check your deployment automatically.
 - [ ] Rate limiting is active (`MC_DISABLE_RATE_LIMIT` is NOT set)
 - [ ] Audit logging is enabled with appropriate retention
 - [ ] Regular database backups configured
+
+## Trusted reverse proxy authentication
+
+`MC_PROXY_AUTH_HEADER` lets a gateway that has already authenticated the user
+pass that identity to Mission Control as an HTTP header. The only credential
+Mission Control checks is `MC_PROXY_AUTH_SECRET` — 32+ random characters that
+the gateway injects as `X-MC-Proxy-Secret`, compared in constant time. It must
+not be the `.env.example` placeholder, which is public. A missing, shorter, or
+placeholder secret disables proxy auth entirely and records a
+`proxy_auth_misconfigured` critical event on the first request; requests that
+present proxy headers which fail any later check are recorded as
+`proxy_auth_rejected`.
+
+Two limitations to account for when assessing this. Proxy auth does not
+currently replace the login form for **page routes**: the edge middleware admits
+requests only on a session cookie or API key, so attested browser requests are
+redirected to `/login` before proxy auth is consulted. For **`/api/*` routes**
+the middleware only shape-checks API keys — it cannot reach the database from
+the edge — and proxy auth resolves before any key is validated, so anyone
+holding the proxy secret can fabricate a syntactically valid key and reach the
+entire API surface. Treat a leaked secret as full API compromise. See
+[docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication).
+
+Because that secret is the whole of the authentication, two deployment
+controls carry the rest of the weight:
+
+1. **The gateway must strip the client's own copy of both headers on every
+   route** before injecting its own — whatever `MC_PROXY_AUTH_HEADER` names
+   (e.g. `X-User-Email`) so a client cannot choose its identity, and
+   `X-MC-Proxy-Secret` so a client cannot replay a leaked secret.
+2. **The app must not be reachable except through that gateway.** Anyone who
+   can open a connection directly and present the secret is any user they name,
+   from anywhere. Every bundled launch path binds to all interfaces by default,
+   so this needs an explicit change — an IP-qualified Compose mapping such as
+   `127.0.0.1:${MC_PORT}:${PORT}`, or `MC_HOSTNAME=127.0.0.1` for the
+   standalone scripts. Setting `MC_PORT` alone does not do it; it is only a
+   port number. See
+   [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication)
+   for the per-launch-path table.
+
+There is deliberately no trusted-IP check. `X-Forwarded-For` records the
+address each proxy saw as *its* peer, so it never contains the address of the
+proxy that connected to the app, and no transport peer is available to compare
+against; any "trusted hop" header would just be the shared secret again with
+less entropy. Restricting where connections can originate is a network control,
+not an application one — hence requirement 2.
+
+Setting `MC_PROXY_AUTH_DEFAULT_ROLE` additionally auto-provisions accounts for
+unknown identities — leave it unset unless that is what you want.
+
+See [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication)
+for the full configuration reference.
 
 See [docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for the full hardening guide.

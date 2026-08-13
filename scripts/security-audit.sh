@@ -40,6 +40,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Must resolve values the same way scripts/load-env.sh does, or the audit will
+# grade a different string than the one the server actually starts with: quoted
+# values are taken verbatim, unquoted ones have a whitespace-preceded inline
+# comment stripped.
 trim_env_value() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -47,9 +51,13 @@ trim_env_value() {
   if [[ ${#value} -ge 2 ]]; then
     if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]] ||
        [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
-      value="${value:1:${#value}-2}"
+      printf '%s' "${value:1:${#value}-2}"
+      return
     fi
   fi
+  value="$(printf '%s' "$value" | sed 's/[[:space:]]#.*$//')"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
   printf '%s' "$value"
 }
 
@@ -60,6 +68,15 @@ if [[ -f "$ENV_FILE" ]]; then
     key="${raw_key#"${raw_key%%[![:space:]]*}"}"
     key="${key%"${key##*[![:space:]]}"}"
     [[ -z "$key" || "$key" == \#* ]] && continue
+    # scripts/load-env.sh accepts an optional `export ` prefix; without stripping
+    # it here the audit would grade an entirely different set of settings than
+    # the ones the server starts with.
+    if [[ "$key" == export[[:space:]]* ]]; then
+      key="${key#export}"
+      key="${key#"${key%%[![:space:]]*}"}"
+      key="${key%"${key##*[![:space:]]}"}"
+      [[ -z "$key" ]] && continue
+    fi
     value="$(trim_env_value "$raw_value")"
     case "$key" in
       AUTH_PASS) AUTH_PASS="$value" ;;
@@ -70,6 +87,10 @@ if [[ -f "$ENV_FILE" ]]; then
       MC_COOKIE_SAMESITE) MC_COOKIE_SAMESITE="$value" ;;
       MC_ENABLE_HSTS) MC_ENABLE_HSTS="$value" ;;
       MC_DISABLE_RATE_LIMIT) MC_DISABLE_RATE_LIMIT="$value" ;;
+      MC_PROXY_AUTH_HEADER) MC_PROXY_AUTH_HEADER="$value" ;;
+      MC_PROXY_AUTH_SECRET) MC_PROXY_AUTH_SECRET="$value" ;;
+      MC_PROXY_AUTH_TRUSTED_IPS) MC_PROXY_AUTH_TRUSTED_IPS="$value" ;;
+      MC_PROXY_AUTH_DEFAULT_ROLE) MC_PROXY_AUTH_DEFAULT_ROLE="$value" ;;
     esac
   done < "$ENV_FILE"
 fi
@@ -136,7 +157,63 @@ if [[ "$MC_ANY" == "1" || "$MC_ANY" == "true" ]]; then
 elif [[ -n "$MC_ALLOWED" ]]; then
   pass "MC_ALLOWED_HOSTS is configured: $MC_ALLOWED"
 else
-  warn "MC_ALLOWED_HOSTS is not set (defaults apply)"
+  fail "MC_ALLOWED_HOSTS is not set (production serves only localhost/::1/hostname; every other host gets 403)"
+fi
+
+# 3b. Trusted reverse proxy authentication
+# src/lib/auth.ts trims the header name and the default role but NOT the secret,
+# so a quoted value with surrounding whitespace works at runtime. Match that
+# exactly, or the audit reports a failure for a configuration that runs fine.
+trim_ws() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "${value%"${value##*[![:space:]]}"}"
+}
+PROXY_HEADER="$(trim_ws "${MC_PROXY_AUTH_HEADER:-}")"
+PROXY_SECRET="${MC_PROXY_AUTH_SECRET:-}"
+PROXY_TRUSTED="${MC_PROXY_AUTH_TRUSTED_IPS:-}"
+PROXY_DEFAULT_ROLE="$(trim_ws "${MC_PROXY_AUTH_DEFAULT_ROLE:-}")"
+if [[ -z "$PROXY_HEADER" ]]; then
+  info "MC_PROXY_AUTH_HEADER is not set (header-based proxy auth disabled)"
+else
+  # An invalid field name makes Headers.get() throw for every request, taking
+  # session and API-key auth down with it, so this is not merely cosmetic.
+  PROXY_HEADER_PATTERN='^[A-Za-z0-9!#$%&'"'"'*+.^_`|~-]+$'
+  if [[ ! "$PROXY_HEADER" =~ $PROXY_HEADER_PATTERN ]]; then
+    fail "MC_PROXY_AUTH_HEADER=$PROXY_HEADER is not a valid HTTP header name (proxy auth disabled)"
+  elif [[ "${PROXY_HEADER,,}" == "x-mc-proxy-secret" ]]; then
+    fail "MC_PROXY_AUTH_HEADER must not be X-MC-Proxy-Secret (identity would resolve to the secret itself; proxy auth disabled)"
+  fi
+
+  # The .env.example placeholder is 42 characters, so a length-only check would
+  # certify a secret that is published in the repository.
+  if [[ "$PROXY_SECRET" == "replace-with-at-least-32-random-characters" ]]; then
+    fail "MC_PROXY_AUTH_SECRET is still the .env.example placeholder (public value; proxy auth disabled)"
+  elif [[ ${#PROXY_SECRET} -ge 32 ]]; then
+    pass "MC_PROXY_AUTH_SECRET is at least 32 characters"
+  else
+    fail "MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is missing or under 32 characters (proxy auth disabled)"
+  fi
+  if [[ -n "$PROXY_TRUSTED" ]]; then
+    warn "MC_PROXY_AUTH_TRUSTED_IPS is set but no longer used; the app cannot identify the proxy hop from headers (see SECURITY.md)"
+  fi
+  # resolveOrProvisionProxyUser accepts only these three and otherwise refuses to
+  # provision, so a typo here silently means "no auto-provisioning" rather than
+  # what the setting appears to say.
+  case "$PROXY_DEFAULT_ROLE" in
+    "") ;;
+    viewer|operator|admin)
+      warn "MC_PROXY_AUTH_DEFAULT_ROLE=$PROXY_DEFAULT_ROLE auto-provisions accounts for unknown proxy identities"
+      ;;
+    *)
+      fail "MC_PROXY_AUTH_DEFAULT_ROLE=$PROXY_DEFAULT_ROLE is not one of viewer, operator, admin (unknown identities will be refused, not provisioned)"
+      ;;
+  esac
+  # Neither can be checked from here — one lives in the reverse proxy config and
+  # the other in the network layer — but the secret is the only credential, so
+  # these two controls are what the scheme actually rests on. Always say them.
+  info "Verify the proxy strips client-supplied $PROXY_HEADER and X-MC-Proxy-Secret headers before injecting its own"
+  info "Verify the app is not reachable except through that proxy (bound to loopback or an internal network)"
 fi
 
 # 4. Cookie/HTTPS config

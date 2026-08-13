@@ -7,20 +7,56 @@ import { parseMcSessionCookieHeader } from './session-cookie'
 const PROXY_AUTH_SECRET_HEADER = 'x-mc-proxy-secret'
 const MIN_PROXY_AUTH_SECRET_LENGTH = 32
 
-// Log once at startup if proxy auth is misconfigured.
+// Values shipped in .env.example. They satisfy the length rule but are public,
+// so treating them as configured would hand the secret to anyone reading the repo.
+const INSECURE_PROXY_AUTH_SECRETS = new Set([
+  'replace-with-at-least-32-random-characters',
+])
+
+// RFC 7230 token. Headers.get() throws a TypeError on anything else, and this
+// runs before any other authentication method, so an invalid configured name
+// would take down session and API-key auth along with it.
+const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+
+// Log once per distinct reason if proxy auth is misconfigured.
 // Deferred to avoid DB access during module initialization.
-let _proxyAuthMisconfigWarned = false
-function warnProxyAuthMisconfigOnce(): void {
-  if (_proxyAuthMisconfigWarned) return
-  _proxyAuthMisconfigWarned = true
+const _proxyAuthMisconfigWarned = new Set<string>()
+function warnProxyAuthMisconfigOnce(reason: string): void {
+  if (_proxyAuthMisconfigWarned.has(reason)) return
+  _proxyAuthMisconfigWarned.add(reason)
   try {
     logSecurityEvent({
       event_type: 'proxy_auth_misconfigured',
       severity: 'critical',
       source: 'auth',
-      detail: JSON.stringify({
-        reason: `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,
-      }),
+      detail: JSON.stringify({ reason }),
+      workspace_id: 1,
+      tenant_id: 1,
+    })
+  } catch {}
+}
+
+// Someone presenting proxy auth headers that do not verify is worth seeing, but
+// a probe loop must not be able to drive one DB insert per request.
+//
+// The window is per reason, not global. A client that cannot be authenticated at
+// all can spray mismatched secrets at a public route; with one shared window
+// that traffic would consume every slot and suppress the post-attestation
+// reasons, which are the ones that indicate someone actually holds the secret.
+// Reasons are string literals from this module, so the map stays bounded.
+const PROXY_AUTH_REJECTION_LOG_INTERVAL_MS = 60_000
+const _proxyAuthRejectionLoggedAt = new Map<string, number>()
+function logProxyAuthRejection(reason: string): void {
+  const now = Date.now()
+  const lastLoggedAt = _proxyAuthRejectionLoggedAt.get(reason) ?? 0
+  if (lastLoggedAt && now - lastLoggedAt < PROXY_AUTH_REJECTION_LOG_INTERVAL_MS) return
+  _proxyAuthRejectionLoggedAt.set(reason, now)
+  try {
+    logSecurityEvent({
+      event_type: 'proxy_auth_rejected',
+      severity: 'warning',
+      source: 'auth',
+      detail: JSON.stringify({ reason }),
       workspace_id: 1,
       tenant_id: 1,
     })
@@ -437,18 +473,57 @@ export function getUserFromRequest(request: Request): User | null {
   // When the gateway has already authenticated the user and injects their username
   // as a trusted header (e.g. X-Auth-Username from Envoy OIDC claimToHeaders),
   // skip the local login form entirely.
-  // Requires a high-entropy shared secret that the trusted gateway injects
-  // after stripping any client-supplied identity and attestation headers.
+  // Authentication rests on a high-entropy shared secret that the gateway
+  // injects, and on nothing else. A trusted-IP check is deliberately absent:
+  // X-Forwarded-For records the address each proxy saw as *its* peer, so it
+  // never contains the address of the proxy that connected to this app, and
+  // there is no transport peer available here to compare against. Any
+  // "trusted hop" value would have to be another gateway-injected header —
+  // i.e. this secret with less entropy — so it would add no independent signal.
+  //
+  // What the scheme actually depends on is the gateway stripping every
+  // client-supplied identity and attestation header before adding its own, and
+  // the app not being reachable except through that gateway. Both are
+  // deployment concerns; see SECURITY.md. A missing or short secret fails
+  // closed and logs a critical event on the first request.
   const proxyAuthHeader = (process.env.MC_PROXY_AUTH_HEADER || '').trim()
   if (proxyAuthHeader) {
     const proxyAuthSecret = process.env.MC_PROXY_AUTH_SECRET || ''
-    if (proxyAuthSecret.length < MIN_PROXY_AUTH_SECRET_LENGTH) {
-      warnProxyAuthMisconfigOnce()
-    } else if (safeCompare(request.headers.get(PROXY_AUTH_SECRET_HEADER) || '', proxyAuthSecret)) {
-      const proxyUsername = (request.headers.get(proxyAuthHeader) || '').trim()
-      if (proxyUsername) {
-        const user = resolveOrProvisionProxyUser(proxyUsername)
-        if (user) return { ...user, agent_name: agentName }
+    if (!HTTP_HEADER_NAME.test(proxyAuthHeader)) {
+      warnProxyAuthMisconfigOnce(
+        'MC_PROXY_AUTH_HEADER is not a valid HTTP header name — proxy auth disabled',
+      )
+    } else if (proxyAuthHeader.toLowerCase() === PROXY_AUTH_SECRET_HEADER) {
+      // Both reads would return the secret, so with auto-provisioning enabled the
+      // first attested request would persist the secret as a username.
+      warnProxyAuthMisconfigOnce(
+        `MC_PROXY_AUTH_HEADER must not be ${PROXY_AUTH_SECRET_HEADER} — the identity and attestation headers must differ; proxy auth disabled`,
+      )
+    } else if (proxyAuthSecret.length < MIN_PROXY_AUTH_SECRET_LENGTH) {
+      warnProxyAuthMisconfigOnce(
+        `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,
+      )
+    } else if (INSECURE_PROXY_AUTH_SECRETS.has(proxyAuthSecret)) {
+      warnProxyAuthMisconfigOnce(
+        'MC_PROXY_AUTH_SECRET is the placeholder from .env.example, which is public — proxy auth disabled',
+      )
+    } else {
+      const presentedSecret = request.headers.get(PROXY_AUTH_SECRET_HEADER) || ''
+      const presentedIdentity = (request.headers.get(proxyAuthHeader) || '').trim()
+
+      if (safeCompare(presentedSecret, proxyAuthSecret)) {
+        // Past this point the caller holds the secret, so every way the request
+        // can still fail is worth a rejection event: it is either a probe using
+        // a leaked secret or a gateway sending identities we cannot resolve.
+        if (!presentedIdentity) {
+          logProxyAuthRejection('attested request carried no identity header')
+        } else {
+          const user = resolveOrProvisionProxyUser(presentedIdentity)
+          if (user) return { ...user, agent_name: agentName }
+          logProxyAuthRejection('attested identity did not resolve to an approved user')
+        }
+      } else if (presentedSecret || presentedIdentity) {
+        logProxyAuthRejection('proxy attestation secret mismatch')
       }
     }
   }

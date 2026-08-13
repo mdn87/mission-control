@@ -351,7 +351,10 @@ See `.env.example` for the full list. Key variables:
 | `OPENCLAW_SECURITY_DENY_FS` | No | `0` | Deny filesystem tool group (opt-in; can block file workflows) |
 | `OPENCLAW_SECURITY_SANDBOX_ALL` | No | `1` | Force `agents.defaults.sandbox.mode="all"` when set (env-driven) |
 | `MISSION_CONTROL_DATA_DIR` | No | `.data/` | Directory for all Mission Control data files (DB, tokens, etc.). Use an absolute path with the standalone server to survive rebuilds. |
-| `MC_ALLOWED_HOSTS` | No | `localhost,127.0.0.1` | Allowed hosts in production |
+| `MC_ALLOWED_HOSTS` | Yes in production | _(none)_ | Comma-separated hosts allowed to reach the app. Host checking fails closed: with this unset, production serves only `localhost`, `127.0.0.1`, `::1`, and the machine hostname, and answers `403 Forbidden` to everything else. Set it to the public hostname before putting the app behind a proxy. |
+| `MC_PROXY_AUTH_HEADER` | No | _(none)_ | Header carrying an identity already authenticated by a trusted gateway (e.g. `X-User-Email`). Enabling it requires `MC_PROXY_AUTH_SECRET` and the deployment controls in [Trusted reverse proxy authentication](#trusted-reverse-proxy-authentication). |
+| `MC_PROXY_AUTH_SECRET` | Yes when `MC_PROXY_AUTH_HEADER` is set | _(none)_ | Random string of at least 32 characters that the gateway injects as `X-MC-Proxy-Secret`. Shorter or missing disables proxy auth and logs a critical security event. |
+| `MC_PROXY_AUTH_DEFAULT_ROLE` | No | _(none)_ | When set to `viewer`, `operator`, or `admin`, unknown proxy identities are auto-provisioned at that role. Leave unset to accept only pre-existing users. |
 | `MC_PORT` | No | `3000` | Host-side port that the bundled `docker-compose.yml` publishes the container's `PORT` on. The bundled `Makefile` expects `7012`. |
 | `ANTHROPIC_API_KEY` | No (Yes for direct dispatch) | - | Used when `dispatchModel` matches `claude-*` / `anthropic/*` and no gateway is available. |
 | `OPENAI_API_KEY` | No | - | Used when `dispatchModel` matches `gpt-*` / `o1-*` / `o3-*` / `openai/*`. |
@@ -379,6 +382,83 @@ See `.env.example` for the full list. Key variables:
 > ```
 > Using an absolute path for `MISSION_CONTROL_DATA_DIR` ensures your
 > database and data survive `npm run build` / standalone server rebuilds.
+
+## Trusted reverse proxy authentication
+
+Setting `MC_PROXY_AUTH_HEADER` lets a gateway that has already authenticated the
+user (Envoy OIDC `claimToHeaders`, an oauth2-proxy, Tailscale Serve) pass that
+identity through. Because the identity arrives as an HTTP header, the gateway
+configuration is part of the security boundary.
+
+> **Known limitation — this does not replace the login form today, and the
+> `/api/*` gate is weaker than it looks.**
+>
+> Proxy identity is resolved in route-level auth (`getUserFromRequest`), but the
+> Next.js middleware in `src/proxy.ts` runs first and admits a request only on a
+> session cookie or an API key. For **page routes** that is a hard gate: an
+> attested request without a cookie is redirected to `/login` before proxy auth
+> is consulted, and `/login` does not exchange a proxy identity for a session,
+> so browser users still sign in normally.
+>
+> For **`/api/*` routes it is not a gate at all.** The middleware cannot query
+> the database from the edge runtime, so it only shape-checks dashboard-issued
+> keys — any string matching `mc_`/`mca_` plus 48 hex characters is admitted and
+> left for route auth to validate. `getUserFromRequest` then checks the proxy
+> secret and returns the proxy user *before* that key is ever validated. A
+> caller holding the proxy secret can therefore fabricate a syntactically valid
+> key and reach every API route as any identity they name. When assessing a
+> leaked secret or a directly reachable backend, assume the whole API surface is
+> exposed; do not treat "needs an API key" as a second factor.
+>
+> Closing this needs either the middleware to recognise attested requests or a
+> session-bootstrap route, and neither is in place yet.
+
+Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
+32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and
+compared in constant time. It must not be the placeholder from `.env.example`,
+which is public. If it is missing, shorter, or that placeholder, proxy auth
+stays disabled, every request falls back to normal session login, and a
+`proxy_auth_misconfigured` critical security event is recorded on the first
+request. Requests presenting proxy headers that fail any check after that —
+a mismatched secret, a missing identity header, or an identity that does not
+resolve to an approved user — are recorded as `proxy_auth_rejected`
+(rate-limited to one event per minute).
+
+Because that secret is the whole of the authentication, two things outside the
+application carry the rest:
+
+**1. The gateway must strip these headers from every inbound client request
+before adding its own**, on every route, not just the login path:
+
+| Header | Why |
+| --- | --- |
+| whatever `MC_PROXY_AUTH_HEADER` names (e.g. `X-User-Email`) | Otherwise a client picks its own identity. |
+| `X-MC-Proxy-Secret` | Otherwise a client can replay a leaked secret. |
+
+**2. The app must not be reachable except through the gateway.** Anyone who can
+open a connection directly and present the secret becomes whatever user they
+name. Every bundled launch path publishes on all interfaces by default, so this
+takes an explicit change:
+
+| Launch path | Default | Loopback-only |
+| --- | --- | --- |
+| `docker-compose.yml` | `"${MC_PORT:-3000}:${PORT:-3000}"` — all interfaces | Override the mapping to `"127.0.0.1:${MC_PORT:-3000}:${PORT:-3000}"`, or drop `ports:` entirely and put the gateway on the same Docker network |
+| `scripts/deploy-standalone.sh` | `MC_HOSTNAME` unset → `0.0.0.0` | Set `MC_HOSTNAME=127.0.0.1` |
+| `scripts/start-standalone.sh` | `HOSTNAME` unset → `0.0.0.0` | Set `HOSTNAME=127.0.0.1` |
+| `pnpm start` | `next start --hostname 0.0.0.0` | Run `next start --hostname 127.0.0.1` |
+
+Note that `MC_PORT` is only a port number — it cannot restrict the interface,
+so changing it does not satisfy this requirement.
+
+There is deliberately no trusted-IP option. `X-Forwarded-For` records the
+address each proxy saw as *its* peer, so it never contains the address of the
+proxy that connected to this app, and no transport peer is exposed to
+middleware to compare against. A "trusted hop" header would just be the shared
+secret with less entropy. Restricting where connections may originate is a
+network control, which is what requirement 2 is.
+
+Leave `MC_PROXY_AUTH_DEFAULT_ROLE` unset unless you intend unknown identities to
+be auto-provisioned as real accounts.
 
 ## Kubernetes Sidecar Deployment
 
