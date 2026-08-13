@@ -428,13 +428,20 @@ configuration is part of the security boundary.
 > 2. Rotate the global `API_KEY` if the user knew it. It is not per-user, so
 >    deleting the account does not affect it.
 >
-> This is a workaround, not a procedure, and two gaps are worth knowing when
+> This is a workaround, not a procedure, and three gaps are worth knowing when
 > assessing exposure. Unapproving alone leaves a live session with no supported
-> way to clear it. And while an unapproved admin still holds that session, the
-> admin routes' role-only checks keep passing, so they can create another
-> approved admin that survives whatever is done to the original. Closing those
-> properly needs an atomic revocation operation — one that invalidates
-> credentials and authority together — rather than a documented ordering.
+> way to clear it. While an unapproved admin still holds that session, the admin
+> routes' role-only checks keep passing, so they can create another approved
+> admin that survives whatever is done to the original. And deletion does not
+> stop a request that was already authorized: every mutation route authenticates
+> before awaiting its body, so a revoked admin can begin `POST /api/auth/users`,
+> stall, wait out the deletion, and then create a fresh approved admin.
+>
+> Revocation is therefore effective only once in-flight requests have drained,
+> and it is worth checking the audit log for user-creation events around the
+> revocation. Closing this properly needs an atomic revocation operation and an
+> authority recheck after body parsing, not a documented ordering — see
+> [docs/plans/2026-08-13-user-revocation.md](plans/2026-08-13-user-revocation.md).
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and

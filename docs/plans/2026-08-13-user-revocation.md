@@ -34,10 +34,29 @@ authenticate, stall the body read until the operator has deleted their sessions,
 then complete a password change and receive a fresh session. Affects non-admin
 users too.
 
+**5. Authorization is decided before the request body is read, everywhere.**
+Handlers call `getUserFromRequest` or `requireRole` at the top and only then
+`await validateBody(...)` or `await request.json()`. The authorization decision
+is an in-memory object from before the await, so nothing that happens during it —
+unapproval, session destruction, account deletion — can cancel the request. A
+revoked admin begins `POST /api/auth/users` (auth at `route.ts:29-31`), stalls
+the body (line 38), waits for the operator to delete the account, then resumes
+and creates a fresh approved admin (lines 43-47).
+
+This is the root cause of problem 4 rather than a separate bug, and it is
+architectural: 89 mutation handlers under `src/app/api` match the shape
+"authenticates, then awaits a body". Most of them merely let a revoked user
+complete one more write. Two are escalations, because what they write is
+persistent access: `POST /api/auth/users` (a new approved admin) and
+`PATCH /api/auth/me` (a new session). The other 87 have not been reviewed
+individually.
+
 ## Current workaround
 
 Delete the account. `deleteUser` destroys sessions before removing the row, so
-deletion is the only complete revocation available today. It is complete only if
+deletion is the most complete revocation available today — but see problem 5: it
+does not stop a request that was already authorized, so revocation is effective
+only once in-flight requests have drained. It is also complete only if
 `MC_PROXY_AUTH_DEFAULT_ROLE` is unset or the gateway has stopped asserting that
 identity — otherwise the next attested request auto-provisions a fresh
 **approved** account with the configured role. The global `API_KEY` is not
@@ -72,12 +91,18 @@ documented ordering of separate steps. Endpoint plus a UI action in user
 management. Should cover sessions and any per-user credentials, and state
 explicitly what it does not cover (the global `API_KEY`).
 
-## Phase 3: close the mint paths
+## Phase 3: recheck authority after parsing
 
-Approval recheck at session issuance, covering problem 4 and anything Phase 1
-turns up. The self-approval guard added in #12 narrows its window rather than
-closing it — the read and write are still separate statements — so an atomic
-check-and-update belongs here too.
+Problem 5 is the general case and problem 4 an instance of it, so the fix is a
+recheck after the body is read rather than a patch per route. Options worth
+weighing: re-resolving the user after `await` in the mutation handlers that
+grant persistent access, or a wrapper that every mutation route goes through so
+the recheck cannot be forgotten on a new one. The second is more work and the
+only one that holds for the 87 routes nobody has looked at.
+
+The self-approval guard added in #12 narrows its window rather than closing it —
+the read and write are still separate statements — so an atomic check-and-update
+belongs here too.
 
 ## Phase 4: tests and documentation
 

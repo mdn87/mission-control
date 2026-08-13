@@ -113,12 +113,20 @@ route or UI action ends someone else's session, so an unapproved account keeps
 working until its session expires or the account is deleted.
 
 **To revoke a user today, delete the account.** `deleteUser` destroys their
-sessions before removing the row, which makes deletion the only complete
+sessions before removing the row, which makes deletion the most complete
 revocation available. Before deleting, confirm `MC_PROXY_AUTH_DEFAULT_ROLE` is
 unset or the gateway no longer asserts that identity — otherwise the next
 attested request finds no row and auto-provisions a fresh approved account with
 that role, re-granting the access you just removed. If the user knew the global
 `API_KEY`, rotate it too; it is not per-user and deletion does not affect it.
+
+**Deletion is still not complete.** Every mutation route authenticates at the
+top of the handler and only then awaits the request body, so a request begun
+before the deletion carries an authorization decision that deletion cannot
+cancel. A revoked admin can start `POST /api/auth/users`, stall the body, wait
+for the deletion, then finish and create a fresh approved admin. Treat
+revocation as effective only once in-flight requests have drained, and check the
+audit log for user-creation events around the revocation.
 
 Known gaps, which are why the above is a workaround rather than a procedure:
 
