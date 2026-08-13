@@ -457,9 +457,13 @@ configuration is part of the security boundary.
 > authenticates directly to the browser-facing gateway with a cached token, and
 > `POST /api/super/os-users` may have created a host account with a password they
 > chose.
-> **1. Stop the schedulers.** `task_dispatch` and `recurring_task_spawn` run every
-> 60 seconds and reach the Claude runtime, provider APIs and host CLIs directly,
-> so isolation does not contain them.
+> **1. Stop both schedulers.** Mission Control's `task_dispatch` and
+> `recurring_task_spawn` run every 60 seconds and reach the Claude runtime,
+> provider APIs and host CLIs directly, so isolation does not contain them — and
+> OpenClaw runs a scheduler of its own for the `cron/jobs.json` jobs that
+> `POST /api/cron` writes, which survives Mission Control being stopped and the
+> isolation alike. Stop it or quarantine suspect jobs now; reviewing that file
+> afterwards is too late.
 > **2. Stop Mission Control and verify the deployed revision** before starting it
 > again — a stalled `POST /api/releases/update` can leave an altered build on disk,
 > and everything after would run under it. Stopping the process is also the only

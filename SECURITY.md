@@ -157,10 +157,18 @@ While the target can still reach Mission Control, no ordering helps at all —
 `security.api_key_hash` *after* you rotate, and `POST /api/gateways/connect`
 reads the gateway token after its body await.
 
-**Step 1 — stop the schedulers.** `task_dispatch` and `recurring_task_spawn` run
-every 60 seconds, so a live scheduler will claim tasks and create recurrences
-while you work. Isolation does not contain them: their dispatch branches reach
-the Claude runtime, provider APIs and host CLIs directly.
+**Step 1 — stop *both* schedulers.** Mission Control's `task_dispatch` and
+`recurring_task_spawn` run every 60 seconds, so a live scheduler will claim tasks
+and create recurrences while you work; isolation does not contain them, because
+their dispatch branches reach the Claude runtime, provider APIs and host CLIs
+directly.
+
+OpenClaw runs a **second scheduler of its own**. `POST /api/cron` writes enabled
+`agentTurn` jobs into `cron/jobs.json`, and that scheduler survives Mission
+Control being stopped *and* the ingress isolation — it is on the other side of the
+boundary. Stop it, or quarantine suspect jobs in `cron/jobs.json`, before going
+further. Reviewing that file afterwards is too late: the jobs run throughout
+everything below.
 
 **Step 2 — stop Mission Control, and verify the deployed revision before
 starting it again.** A stalled `POST /api/releases/update` can leave an older or
