@@ -175,6 +175,39 @@ if bash "$AUDIT" --env-file "$BAD_HEADER_ENV" --strict >/dev/null 2>&1; then
   exit 1
 fi
 
+# Using the attestation header as the identity header resolves every identity to
+# the secret itself.
+COLLIDE_ENV="$TMP_DIR/collide.env"
+sed 's/^export MC_PROXY_AUTH_HEADER=.*/export MC_PROXY_AUTH_HEADER=x-mc-proxy-secret/; s/^export MC_PROXY_AUTH_SECRET=.*/export MC_PROXY_AUTH_SECRET=0123456789abcdef0123456789abcdef/' \
+  "$EXPORT_ENV" > "$COLLIDE_ENV"
+chmod 600 "$COLLIDE_ENV"
+collide_output="$(bash "$AUDIT" --env-file "$COLLIDE_ENV" || true)"
+grep -Fq '[FAIL] MC_PROXY_AUTH_HEADER must not be X-MC-Proxy-Secret' <<< "$collide_output"
+
+# The runtime trims the header name and default role, so the audit must too or it
+# reports a failure for a configuration that works.
+PADDED_ENV="$TMP_DIR/padded.env"
+cat > "$PADDED_ENV" <<'EOF'
+AUTH_PASS="a secure # password"
+API_KEY=test-api-key
+MC_ALLOWED_HOSTS=127.0.0.1,localhost
+MC_COOKIE_SECURE=1
+MC_COOKIE_SAMESITE=strict
+MC_ENABLE_HSTS=1
+MC_DISABLE_RATE_LIMIT=0
+MC_PROXY_AUTH_HEADER=" X-User-Email "
+MC_PROXY_AUTH_SECRET=0123456789abcdef0123456789abcdef
+MC_PROXY_AUTH_DEFAULT_ROLE=" viewer "
+EOF
+chmod 600 "$PADDED_ENV"
+padded_output="$(bash "$AUDIT" --env-file "$PADDED_ENV" --strict)"
+grep -Fq '[PASS] MC_PROXY_AUTH_SECRET is at least 32 characters' <<< "$padded_output"
+grep -Fq '[WARN] MC_PROXY_AUTH_DEFAULT_ROLE=viewer auto-provisions' <<< "$padded_output"
+if grep -Fq '[FAIL]' <<< "$padded_output"; then
+  echo 'Padded but valid proxy settings must not produce a finding' >&2
+  exit 1
+fi
+
 # MC_ALLOWED_HOSTS omitted is now a finding, since host checking fails closed.
 NO_HOSTS_ENV="$TMP_DIR/no-hosts.env"
 cat > "$NO_HOSTS_ENV" <<'EOF'

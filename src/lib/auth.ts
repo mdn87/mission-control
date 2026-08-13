@@ -493,6 +493,12 @@ export function getUserFromRequest(request: Request): User | null {
       warnProxyAuthMisconfigOnce(
         'MC_PROXY_AUTH_HEADER is not a valid HTTP header name — proxy auth disabled',
       )
+    } else if (proxyAuthHeader.toLowerCase() === PROXY_AUTH_SECRET_HEADER) {
+      // Both reads would return the secret, so with auto-provisioning enabled the
+      // first attested request would persist the secret as a username.
+      warnProxyAuthMisconfigOnce(
+        `MC_PROXY_AUTH_HEADER must not be ${PROXY_AUTH_SECRET_HEADER} — the identity and attestation headers must differ; proxy auth disabled`,
+      )
     } else if (proxyAuthSecret.length < MIN_PROXY_AUTH_SECRET_LENGTH) {
       warnProxyAuthMisconfigOnce(
         `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,

@@ -104,9 +104,15 @@ controls carry the rest of the weight:
    route** before injecting its own — whatever `MC_PROXY_AUTH_HEADER` names
    (e.g. `X-User-Email`) so a client cannot choose its identity, and
    `X-MC-Proxy-Secret` so a client cannot replay a leaked secret.
-2. **The app must not be reachable except through that gateway.** Bind it to
-   loopback or an internal network. Anyone who can open a connection directly
-   and present the secret is any user they name, from anywhere.
+2. **The app must not be reachable except through that gateway.** Anyone who
+   can open a connection directly and present the secret is any user they name,
+   from anywhere. Every bundled launch path binds to all interfaces by default,
+   so this needs an explicit change — an IP-qualified Compose mapping such as
+   `127.0.0.1:${MC_PORT}:${PORT}`, or `MC_HOSTNAME=127.0.0.1` for the
+   standalone scripts. Setting `MC_PORT` alone does not do it; it is only a
+   port number. See
+   [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication)
+   for the per-launch-path table.
 
 There is deliberately no trusted-IP check. `X-Forwarded-For` records the
 address each proxy saw as *its* peer, so it never contains the address of the

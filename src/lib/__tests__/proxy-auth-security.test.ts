@@ -180,6 +180,21 @@ describe('trusted proxy header authentication', () => {
     expect(getUserFromRequest(new Request('http://localhost/api/x'))).toBeNull()
   })
 
+  it('refuses to use the attestation header as the identity header', async () => {
+    // Both reads would return the secret, so with auto-provisioning this would
+    // persist the credential as a username.
+    process.env.MC_PROXY_AUTH_HEADER = 'X-MC-Proxy-Secret'
+    process.env.MC_PROXY_AUTH_DEFAULT_ROLE = 'viewer'
+    const { requireRole } = await loadAuth({ database: makeEmptyDatabase() })
+    const request = new Request('http://localhost/api/auth/users', {
+      headers: { 'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef' },
+    })
+
+    const result = requireRole(request, 'admin')
+
+    expect(result).toEqual({ error: 'Authentication required', status: 401 })
+  })
+
   it('does not let mismatched-secret noise suppress the post-attestation signal', async () => {
     // A client with no secret can spray a public route. If that shared one reason
     // consumed a single global window, the event that indicates someone actually

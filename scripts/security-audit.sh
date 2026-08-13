@@ -161,10 +161,18 @@ else
 fi
 
 # 3b. Trusted reverse proxy authentication
-PROXY_HEADER="${MC_PROXY_AUTH_HEADER:-}"
+# src/lib/auth.ts trims the header name and the default role but NOT the secret,
+# so a quoted value with surrounding whitespace works at runtime. Match that
+# exactly, or the audit reports a failure for a configuration that runs fine.
+trim_ws() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "${value%"${value##*[![:space:]]}"}"
+}
+PROXY_HEADER="$(trim_ws "${MC_PROXY_AUTH_HEADER:-}")"
 PROXY_SECRET="${MC_PROXY_AUTH_SECRET:-}"
 PROXY_TRUSTED="${MC_PROXY_AUTH_TRUSTED_IPS:-}"
-PROXY_DEFAULT_ROLE="${MC_PROXY_AUTH_DEFAULT_ROLE:-}"
+PROXY_DEFAULT_ROLE="$(trim_ws "${MC_PROXY_AUTH_DEFAULT_ROLE:-}")"
 if [[ -z "$PROXY_HEADER" ]]; then
   info "MC_PROXY_AUTH_HEADER is not set (header-based proxy auth disabled)"
 else
@@ -173,6 +181,8 @@ else
   PROXY_HEADER_PATTERN='^[A-Za-z0-9!#$%&'"'"'*+.^_`|~-]+$'
   if [[ ! "$PROXY_HEADER" =~ $PROXY_HEADER_PATTERN ]]; then
     fail "MC_PROXY_AUTH_HEADER=$PROXY_HEADER is not a valid HTTP header name (proxy auth disabled)"
+  elif [[ "${PROXY_HEADER,,}" == "x-mc-proxy-secret" ]]; then
+    fail "MC_PROXY_AUTH_HEADER must not be X-MC-Proxy-Secret (identity would resolve to the secret itself; proxy auth disabled)"
   fi
 
   # The .env.example placeholder is 42 characters, so a length-only check would

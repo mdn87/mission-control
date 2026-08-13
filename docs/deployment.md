@@ -435,10 +435,20 @@ before adding its own**, on every route, not just the login path:
 | whatever `MC_PROXY_AUTH_HEADER` names (e.g. `X-User-Email`) | Otherwise a client picks its own identity. |
 | `X-MC-Proxy-Secret` | Otherwise a client can replay a leaked secret. |
 
-**2. The app must not be reachable except through the gateway.** Bind it to
-loopback or an internal network — with `MC_PORT` published only on `127.0.0.1`,
-or on an internal Docker network the gateway shares. Anyone who can open a
-connection directly and present the secret becomes whatever user they name.
+**2. The app must not be reachable except through the gateway.** Anyone who can
+open a connection directly and present the secret becomes whatever user they
+name. Every bundled launch path publishes on all interfaces by default, so this
+takes an explicit change:
+
+| Launch path | Default | Loopback-only |
+| --- | --- | --- |
+| `docker-compose.yml` | `"${MC_PORT:-3000}:${PORT:-3000}"` — all interfaces | Override the mapping to `"127.0.0.1:${MC_PORT:-3000}:${PORT:-3000}"`, or drop `ports:` entirely and put the gateway on the same Docker network |
+| `scripts/deploy-standalone.sh` | `MC_HOSTNAME` unset → `0.0.0.0` | Set `MC_HOSTNAME=127.0.0.1` |
+| `scripts/start-standalone.sh` | `HOSTNAME` unset → `0.0.0.0` | Set `HOSTNAME=127.0.0.1` |
+| `pnpm start` | `next start --hostname 0.0.0.0` | Run `next start --hostname 127.0.0.1` |
+
+Note that `MC_PORT` is only a port number — it cannot restrict the interface,
+so changing it does not satisfy this requirement.
 
 There is deliberately no trusted-IP option. `X-Forwarded-For` records the
 address each proxy saw as *its* peer, so it never contains the address of the
