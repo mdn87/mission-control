@@ -1,1 +1,11 @@
 * text=auto eol=lf
+
+# Vendored third-party attribution text, kept byte-identical to what upstream
+# ships — a licensing artifact, not source to reformat.
+#
+# Git already leaves it alone: the file mixes 21 CRLF endings with a single lone
+# CR, so normalizing is not round-trip safe and `text=auto` declines it. That is
+# a heuristic, not a promise. `-text` states the intent outright, so the file
+# survives a deliberate `git add --renormalize` and a reader who finds CRLF in a
+# repo that mandates LF has the reason next to the rule.
+public/office-sprites/kenney/ATTRIBUTION-KENNEY.txt -text

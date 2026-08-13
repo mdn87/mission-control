@@ -469,6 +469,18 @@ export function getUserFromRequest(request: Request): User | null {
   // the app not being reachable except through that gateway. Both are
   // deployment concerns; see SECURITY.md. A missing or short secret fails
   // closed and logs a critical event on the first request.
+  //
+  // This runs *before* the session cookie, deliberately. When proxy auth is
+  // enabled the gateway is the identity authority, and its assertion is current
+  // where a cookie may be stale — a user whose upstream identity changed should
+  // not keep the old one because a cookie outlived it. Checking the cookie first
+  // would let a stale or stolen session override the authority.
+  //
+  // The ordering does not widen exposure: reaching this branch requires the
+  // attestation secret, and anyone holding it authenticates as whoever they name
+  // regardless of which check runs first. When proxy auth is not configured the
+  // block is skipped entirely, so the ordering is moot for every deployment that
+  // does not opt in.
   const proxyAuthConfig = readProxyAuthConfig()
   if (proxyAuthConfig.status !== 'disabled') {
     if (proxyAuthConfig.status === 'misconfigured') {
