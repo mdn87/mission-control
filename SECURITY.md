@@ -123,19 +123,25 @@ that role, re-granting the access you just removed. If the user knew the global
 **Deletion is still not complete.** Every mutation route authenticates at the
 top of the handler and only then awaits the request body, so a request begun
 before the deletion carries an authorization decision that deletion cannot
-cancel. At least nine such routes grant access that outlives the revocation —
-a new approved admin, a new session, an approved access request, an agent API
-key, the rotated global `API_KEY`, a webhook pointed at an attacker's URL, a
-regenerated gateway token, or users moved between workspaces.
+cancel. Six such routes grant access that outlives it: a new approved admin, an
+approved access request, an agent API key, a webhook aimed at an attacker's URL,
+a host OS account, and the gateway bearer credential.
 
-One escapes the application altogether: on a deployment where the Mission
-Control process has passwordless sudo for `useradd`, `POST /api/super/os-users`
-creates a **host OS account** with a password from the request body. Nothing
-done inside Mission Control revokes that.
+**Two of those leave the application**, and nothing done inside Mission Control
+undoes either. Where the process has passwordless sudo for `useradd`,
+`POST /api/super/os-users` creates a **host OS account** (the requested password
+is applied by a separate `chpasswd` call whose failure is ignored, so without
+that privilege too the account exists with no usable password).
+`POST /api/gateways/connect` returns the **real gateway bearer credential** to
+operator+ callers; it authenticates to the separate OpenClaw gateway and
+deleting a Mission Control user does not rotate it.
 
-Treat revocation as effective only once in-flight requests have drained. Check
-the audit log around it for user creation, access-request approvals, key and
-webhook issuance, and — on super-admin deployments — the host's account list.
+Treat revocation as effective only once in-flight requests have drained. When
+checking what happened during the window, note that **the audit log does not
+cover all of it** — neither webhook creation nor agent API key issuance writes an
+audit event. Inspect the `webhooks` and `agent_api_keys` tables directly, the
+audit log for user creation and access-request approvals, the gateway's own
+credential state, and the host's account list on super-admin deployments.
 
 Known gaps, which are why the above is a workaround rather than a procedure:
 

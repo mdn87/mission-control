@@ -49,33 +49,57 @@ architectural: 89 mutation handlers under `src/app/api` match the shape
 call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
 `await request.json()`).
 
-Most merely let a revoked user complete one more write. **At least nine grant
-persistent access**, which is what makes the shape a revocation problem rather
-than an ordinary race:
+Most merely let a revoked user complete one more write. **Six grant access that
+survives account deletion**, which is what makes the shape a revocation problem
+rather than an ordinary race:
 
 | Route | What survives the revocation |
 | --- | --- |
-| `POST /api/super/os-users` | **A host OS account** — `sudo -n /usr/sbin/useradd` at line 366, with a password from the request body (line 274) |
+| `POST /api/super/os-users` | **A host OS account** — `sudo -n /usr/sbin/useradd`, line 366 |
+| `POST /api/gateways/connect` | **The real gateway bearer credential**, returned to operator+ at lines 184-193 |
 | `POST /api/auth/users` | A new approved admin (`createUser` defaults `is_approved` to 1) |
-| `PATCH /api/auth/me` | A new session, minted after the operator's deletion |
-| `POST /api/auth/access-requests` | An account approved with a chosen role (`is_approved = 1`, line 108/115) |
+| `POST /api/auth/access-requests` | An account approved with a chosen role (`is_approved = 1`, lines 108/115) |
 | `POST /api/agents/[id]/keys` | An agent API key (`mca_…`, line 153) |
-| `POST /api/tokens/rotate` | The rotated global `API_KEY`, now known to the revoked admin (line 83) |
-| `POST /api/webhooks` | A webhook with an attacker-chosen URL and a generated secret (line 75-79) — ongoing event exfiltration |
-| `POST /api/security-scan/fix` | Regenerated keys and a gateway auth token (lines 205, 252) |
-| `PUT /api/workspaces/[id]` | Users reassigned across workspaces (line 151), which is the boundary the admin routes scope against |
+| `POST /api/webhooks` | A webhook with an attacker-chosen URL and generated secret (lines 75-79) — ongoing event exfiltration |
 
-The first is the one that matters most: it escapes the application entirely, so
-no amount of Mission Control revocation touches it. It requires the deployment
-to have granted the MC process passwordless sudo for `useradd` (the route's own
-error hint at line 372 says so), which is the "super admin" configuration rather
-than every install.
+**Two of these leave the application**, and neither is undone by anything done
+inside Mission Control:
 
-These were found by scanning the in-flight set for credential, identity, and
-permission writes. **The set is a floor, not a total** — the scan keyed on
-`createUser`/`createSession`/`hashApiKey`/`randomBytes`/`INSERT INTO` and similar,
-so a route that grants persistent access by some other means would not appear.
-The first pass of this plan said "two", and looking properly found nine.
+- The host OS account. Creating it needs passwordless sudo for `useradd`. Note
+  the *password* from the request body is applied by a **separate**
+  `sudo -n /usr/sbin/chpasswd` call at lines 379-383 whose failure is silently
+  swallowed, so a narrowly scoped sudoers rule yields an account with no usable
+  password rather than the attacker-chosen one. That is a weaker outcome than a
+  password-backed login, not a safe one.
+- The gateway bearer credential, which authenticates directly to the separate
+  OpenClaw gateway and is not rotated by deleting a Mission Control user.
+
+`PATCH /api/auth/me` mints a session, but **not through the deletion race**: the
+password path reloads `password_hash` from `users` (line ~71) and returns 403
+once the row is gone. It survives clearing sessions alone, so it matters for
+problem 1 and not for the deletion workaround.
+
+### What this list is not
+
+The count went 2 → 5 → 9 → 6 across successive passes. The nine was wrong in
+both directions, and the errors are worth recording so the next reader calibrates
+against them rather than the number:
+
+- `POST /api/tokens/rotate` was counted and does not belong: it never awaits a
+  body, so there is nothing to stall.
+- `POST /api/security-scan/fix` was counted and does not belong: it writes the
+  regenerated key and gateway token to `.env` and the OpenClaw config and returns
+  only counts and generic notes (lines 393-404), so the requester never receives
+  them.
+- `PUT /api/workspaces/[id]` was counted and does not belong: it updates name,
+  brand, and isolation only. The user reassignment at line 151 is in the `DELETE`
+  handler, which does not await a body either.
+- `POST /api/gateways/connect` was missed entirely, and it is one of the two
+  external paths.
+
+The scan keyed on `createUser`/`createSession`/`hashApiKey`/`randomBytes`/
+`INSERT INTO` and similar, so a route granting persistence by other means would
+not appear. Treat six as the current floor, not a total.
 
 ## Current workaround
 
@@ -130,7 +154,17 @@ The self-approval guard added in #12 narrows its window rather than closing it �
 the read and write are still separate statements — so an atomic check-and-update
 belongs here too.
 
-## Phase 4: tests and documentation
+## Phase 4: audit coverage
+
+Two of the six escalation routes write no audit record at all: `POST /api/webhooks`
+and `POST /api/agents/[id]/keys` never call `logAuditEvent` or insert into
+`audit_log`. An operator investigating a revocation window can therefore find
+nothing in the audit log and still have an attacker's webhook or agent key
+active. Add audit events for both — and check the rest of the credential-issuing
+routes for the same gap while doing it, since these two were found by testing a
+documentation claim rather than by a deliberate sweep.
+
+## Phase 5: tests and documentation
 
 Regression tests for each of the four problems above, in the style of the
 precedence tests added in #12 (assert the behaviour; verify the guard is

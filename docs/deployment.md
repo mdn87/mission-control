@@ -437,20 +437,22 @@ configuration is part of the security boundary.
 > before awaiting its body, so a revoked admin can begin `POST /api/auth/users`,
 > stall, wait out the deletion, and then create a fresh approved admin.
 >
-> At least nine mutation routes in that shape grant access outliving the
-> revocation, and one leaves the application entirely: where the Mission Control
-> process has passwordless sudo for `useradd`, `POST /api/super/os-users` creates
-> a host OS account with a password from the request body. The rest mint a new
-> approved admin, a session, an approved access request, an agent API key, the
-> rotated global `API_KEY`, a webhook aimed at a chosen URL, or a regenerated
-> gateway token.
+> Six mutation routes in that shape grant access outliving the revocation, and
+> **two of them leave the application**. Where the Mission Control process has
+> passwordless sudo for `useradd`, `POST /api/super/os-users` creates a host OS
+> account; `POST /api/gateways/connect` returns the real gateway bearer
+> credential to operator+ callers, which deleting a Mission Control user does not
+> rotate. The other four mint a new approved admin, an approved access request,
+> an agent API key, or a webhook aimed at a chosen URL.
 >
-> Revocation is therefore effective only once in-flight requests have drained,
-> and the audit log is worth checking around it for user creation, access-request
-> approvals, key and webhook issuance — and the host's account list on
-> super-admin deployments. Closing this properly needs an atomic revocation
-> operation and an authority recheck after body parsing, not a documented
-> ordering — see
+> Revocation is therefore effective only once in-flight requests have drained.
+> When checking the window afterwards, note that the audit log does not record
+> webhook creation or agent key issuance — inspect the `webhooks` and
+> `agent_api_keys` tables directly, alongside the audit log, the gateway's
+> credential state, and the host's account list on super-admin deployments.
+>
+> Closing this properly needs an atomic revocation operation and an authority
+> recheck after body parsing, not a documented ordering — see
 > [docs/plans/2026-08-13-user-revocation.md](plans/2026-08-13-user-revocation.md).
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
