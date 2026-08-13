@@ -129,14 +129,14 @@ replacement.
 **Deletion is still not complete.** Most mutation routes authenticate at the top
 of the handler and only then await the request body — 89 of them, though a few
 such as `POST /api/tokens/rotate` read no body at all — so a request begun before
-the deletion carries an authorization decision that deletion cannot cancel. Ten
+the deletion carries an authorization decision that deletion cannot cancel. Twelve
 of those routes grant access or action that outlives it: a new approved admin, an
 approved access request, an agent API key, a webhook aimed at an attacker's URL,
 an OpenClaw cron job, a paired gateway device with its own token, a spawned
-gateway agent run, a persistent agent command allowlist, a host OS account, and
-the gateway bearer credential.
+gateway agent run, a persistent agent command allowlist, overwritten agent instruction files,
+attacker-authored skills, a host OS account, and the gateway bearer credential.
 
-**Six of those leave the application**, and nothing done inside Mission Control
+**Eight of those leave the application**, and nothing done inside Mission Control
 undoes any of them. Wherever the platform's account-creation command is available
 to the process, `POST /api/super/os-users` creates a **host OS account**. On Linux
 that is passwordless sudo for `useradd`, and the requested password is applied by
@@ -157,6 +157,10 @@ the window. `PUT /api/exec-approvals` writes **agent command allowlists** to
 OpenClaw's persistent `exec-approvals.json`, so wildcard patterns added during the
 window let agents run matching commands without approval indefinitely — neither
 deletion nor a restart reverts that file, and the route writes no audit event.
+`PUT /api/agents/[id]/files` overwrites **agent instruction files** (`AGENTS.md`,
+`TOOLS.md`, `soul.md`) in the OpenClaw workspace, and `PUT /api/skills` writes
+**attacker-authored skills** into the skill roots; both shape what agents do
+afterwards and survive deletion and restart.
 
 **Cut the in-flight requests before rotating anything.** There is no per-user
 request registry and no drain check, so "wait for requests to finish" is not
@@ -183,10 +187,24 @@ Then, in this order:
   environment when no such row exists, so the old database-backed key stays valid
   behind a changed env var. To rotate by environment instead, delete that
   settings row as part of the change.
+- **Restart again after rotating the global key, before rotating the gateway
+  credential.** The first restart does not lock out someone who knows the old
+  global key: it stays valid until rotated, `getUserFromRequest` grants its
+  holder admin, and they can reconnect and stall `POST /api/gateways/connect` —
+  which reads the token after its body await — to capture the *replacement*
+  gateway credential. Keep ingress closed until the old key is invalid, or
+  restart between the two rotations.
 - **Cancel any agent runs spawned during the window**, at the gateway. The
   restart does not reach them.
 - **Review OpenClaw's `exec-approvals.json`** and remove allowlist entries added
-  during the window.
+  during the window, and the agent workspace's `AGENTS.md`, `TOOLS.md`,
+  `soul.md` and skill roots for instructions written during it.
+- **Revoke every agent API key the departing user created or saw** — not only
+  keys minted during the window. `deleteUser` removes sessions and the user row
+  and nothing else: `agent_api_keys` rows survive, the lookup checks only the
+  hash, expiry and `revoked_at` without regard to `created_by`, and such a key
+  can carry the `admin` scope. A key issued months earlier therefore outlives
+  every step above.
 - **Do not rely on the audit log alone.** Webhook creation, agent API key
   issuance, cron job creation, gateway connect, device pairing, and exec-approval
   changes write no audit events. Inspect the `webhooks` and `agent_api_keys`

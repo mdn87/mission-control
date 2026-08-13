@@ -55,7 +55,7 @@ architectural: 89 mutation handlers under `src/app/api` match the shape
 call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
 `await request.json()`).
 
-Most merely let a revoked user complete one more write. **Ten grant access or
+Most merely let a revoked user complete one more write. **Twelve grant access or
 action that survives account deletion**, which is what makes the shape a revocation problem
 rather than an ordinary race:
 
@@ -70,9 +70,11 @@ rather than an ordinary race:
 | `POST /api/cron` (`add`) | An enabled OpenClaw cron job with an attacker-chosen schedule and agent-turn message (lines 371-413), written to `cron/jobs.json` |
 | `POST /api/nodes` | An approved gateway device pairing (auth line 97, body await 102, `device.pair.approve` 132-134); the paired device holds its own token |
 | `PUT /api/exec-approvals` | Agent command allowlist patterns written to OpenClaw's persistent `exec-approvals.json` (auth line 114, body await 120, write 130-172); no audit event |
+| `PUT /api/agents/[id]/files` | Overwritten agent instruction files — `AGENTS.md`, `TOOLS.md`, `soul.md` — in the OpenClaw workspace (auth 105, body await 116, write 139-141) |
+| `PUT /api/skills` | Attacker-authored skills written into the OpenClaw or workspace skill roots (auth 408, body await 415) |
 | `POST /api/spawn` | A gateway agent run with an attacker-chosen task (auth line 19, body await 28, `sessions_spawn` 86-103), timeout up to an hour; a Mission Control restart does not cancel it |
 
-**Six of these leave the application**, and none is undone by anything done
+**Eight of these leave the application**, and none is undone by anything done
 inside Mission Control:
 
 - The host OS account, wherever the platform's account-creation command is
@@ -100,6 +102,10 @@ inside Mission Control:
 - The agent command allowlist in OpenClaw's `exec-approvals.json`. Wildcard
   patterns added during the window let agents execute matching commands without
   approval, indefinitely, and neither deletion nor a restart reverts the file.
+- The agent instruction files — `AGENTS.md`, `TOOLS.md`, `soul.md` — in the
+  OpenClaw workspace, which shape what every later agent turn does.
+- Attacker-authored skills in the OpenClaw or workspace skill roots, same
+  reasoning: they are read by agents long after the account is gone.
 
 `PATCH /api/auth/me` mints a session, but **not through the deletion race**: the
 password path reloads `password_hash` from `users` (line ~71) and returns 403
@@ -108,7 +114,7 @@ problem 1 and not for the deletion workaround.
 
 ### What this list is not
 
-The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 → 10 across successive passes, every step of it
+The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 → 10 → 12 across successive passes, every step of it
 prompted by review rather than by my own checking. The nine was wrong in both
 directions, and the errors are worth recording so the next reader calibrates
 against them rather than the number:
@@ -133,7 +139,7 @@ against them rather than the number:
 
 The scan keyed on `createUser`/`createSession`/`hashApiKey`/`randomBytes`/
 `INSERT INTO` and similar, so a route granting persistence by other means would
-not appear. Treat ten as the current floor, not a total.
+not appear. Treat twelve as the current floor, not a total.
 
 ## Current workaround
 
@@ -167,6 +173,19 @@ Worth establishing here, because neither was checked while filing this:
   admin-creates-admin path in problem 3 survives it.
 - Whether any path other than `PATCH /api/auth/me` can issue a session for an
   already-unapproved user.
+
+## Phase 1a: agent API keys are not revoked at all
+
+Distinct from every race above, and simpler: `deleteUser` destroys sessions and
+deletes the user row, and touches nothing else. `agent_api_keys` rows survive,
+the lookup in `src/lib/auth.ts:565-600` matches on `key_hash` with only
+`revoked_at` and expiry checks and no regard for `created_by`, and a key may
+carry the `admin` scope. An admin who minted an agent key months ago keeps full
+access after their account is deleted, with no in-flight request and no race
+involved.
+
+Any revocation operation must revoke that user's agent keys, and the UI needs a
+way to see which keys a given user created.
 
 ## Phase 1b: there is no drain primitive
 

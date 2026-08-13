@@ -440,8 +440,8 @@ configuration is part of the security boundary.
 > revoked admin can begin `POST /api/auth/users`, stall, wait out the deletion,
 > and then create a fresh approved admin.
 >
-> Ten mutation routes in that shape grant access outliving the revocation, and
-> **six of them leave the application**. Wherever the platform's account-creation
+> Twelve mutation routes in that shape grant access outliving the revocation, and
+> **eight of them leave the application**. Wherever the platform's account-creation
 > command is reachable — passwordless sudo for `useradd` on Linux, `sysadminctl
 > -addUser` on macOS, which unlike Linux does apply the requested password —
 > `POST /api/super/os-users` creates a host OS account. `POST /api/gateways/connect`
@@ -467,9 +467,17 @@ configuration is part of the security boundary.
 > where a `settings.security.api_key_hash` row exists; that row takes precedence
 > and the old key stays valid until it is removed.
 >
+> Restart **again** after rotating the global key and before rotating the gateway
+> credential: the first restart does not lock out someone holding the old global
+> key, and they can stall `gateways/connect` to capture the replacement gateway
+> token.
+>
 > **Cancel any agent runs spawned during the window** at the gateway — the
-> restart does not reach them — and review OpenClaw's `exec-approvals.json`,
-> removing allowlist entries added during it.
+> restart does not reach them — review OpenClaw's `exec-approvals.json`, the
+> agent workspace instruction files and skill roots for changes made during it,
+> and **revoke every agent API key the departing user created or saw**:
+> `deleteUser` does not touch `agent_api_keys`, the lookup ignores `created_by`,
+> and such a key can carry the `admin` scope.
 >
 > The audit log does not record webhook creation, agent key issuance, cron job
 > creation, gateway connect, device pairing, or exec-approval changes — inspect
