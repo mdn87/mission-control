@@ -310,3 +310,102 @@ describe('proxy host matching', () => {
     expect(response.status).toBe(401)
   })
 })
+
+describe('proxy attestation at the edge gate', () => {
+  const SECRET = '0123456789abcdef0123456789abcdef'
+
+  function request(pathname: string, headers: Record<string, string>) {
+    return {
+      headers: new Headers({ host: 'localhost', ...headers }),
+      nextUrl: {
+        host: 'localhost', hostname: 'localhost', pathname,
+        searchParams: new URLSearchParams(),
+        // A real URL: NextResponse.redirect rejects anything else, and the
+        // no-session page path redirects.
+        clone: () => new URL(`http://localhost${pathname}`),
+      },
+      method: 'GET',
+      cookies: { get: () => undefined },
+    } as any
+  }
+
+  async function loadProxy(env: Record<string, string | undefined>) {
+    vi.resetModules()
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    return (await import('./proxy')).proxy
+  }
+
+  it('admits an attested API request that has no session or API key', async () => {
+    const proxy = await loadProxy({
+      MC_PROXY_AUTH_HEADER: 'X-User-Email',
+      MC_PROXY_AUTH_SECRET: SECRET,
+    })
+    const res = proxy(request('/api/agents', {
+      'x-mc-proxy-secret': SECRET,
+      'x-user-email': 'admin',
+    }))
+    expect(res.status).not.toBe(401)
+  })
+
+  it('admits an attested page request instead of redirecting to /login', async () => {
+    const proxy = await loadProxy({
+      MC_PROXY_AUTH_HEADER: 'X-User-Email',
+      MC_PROXY_AUTH_SECRET: SECRET,
+    })
+    const res = proxy(request('/dashboard', {
+      'x-mc-proxy-secret': SECRET,
+      'x-user-email': 'admin',
+    }))
+    expect(res.status).toBe(200)
+  })
+
+  it('does not admit an identity header without the attestation secret', async () => {
+    const proxy = await loadProxy({
+      MC_PROXY_AUTH_HEADER: 'X-User-Email',
+      MC_PROXY_AUTH_SECRET: SECRET,
+    })
+    expect(proxy(request('/api/agents', { 'x-user-email': 'admin' })).status).toBe(401)
+    expect(proxy(request('/dashboard', { 'x-user-email': 'admin' })).status).toBe(307)
+  })
+
+  it('does not admit a same-length but incorrect secret', async () => {
+    const proxy = await loadProxy({
+      MC_PROXY_AUTH_HEADER: 'X-User-Email',
+      MC_PROXY_AUTH_SECRET: SECRET,
+    })
+    const res = proxy(request('/api/agents', {
+      'x-mc-proxy-secret': 'fedcba9876543210fedcba9876543210',
+      'x-user-email': 'admin',
+    }))
+    expect(res.status).toBe(401)
+  })
+
+  it('does not admit anything when proxy auth is misconfigured', async () => {
+    // The .env.example placeholder is public, so it must not gate the edge either.
+    const placeholder = 'replace-with-at-least-32-random-characters'
+    const proxy = await loadProxy({
+      MC_PROXY_AUTH_HEADER: 'X-User-Email',
+      MC_PROXY_AUTH_SECRET: placeholder,
+    })
+    const res = proxy(request('/api/agents', {
+      'x-mc-proxy-secret': placeholder,
+      'x-user-email': 'admin',
+    }))
+    expect(res.status).toBe(401)
+  })
+
+  it('does not admit when proxy auth is switched off entirely', async () => {
+    const proxy = await loadProxy({
+      MC_PROXY_AUTH_HEADER: undefined,
+      MC_PROXY_AUTH_SECRET: SECRET,
+    })
+    const res = proxy(request('/api/agents', {
+      'x-mc-proxy-secret': SECRET,
+      'x-user-email': 'admin',
+    }))
+    expect(res.status).toBe(401)
+  })
+})

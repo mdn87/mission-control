@@ -3,16 +3,8 @@ import os from 'node:os'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { buildMissionControlCsp, buildNonceRequestHeaders } from '@/lib/csp'
+import { hasValidProxyAttestation, safeCompare } from '@/lib/proxy-auth-config'
 import { MC_SESSION_COOKIE_NAME, LEGACY_MC_SESSION_COOKIE_NAME } from '@/lib/session-cookie'
-
-/** Constant-time string comparison using Node.js crypto. */
-function safeCompare(a: string, b: string): boolean {
-  if (typeof a !== 'string' || typeof b !== 'string') return false
-  const bufA = Buffer.from(a)
-  const bufB = Buffer.from(b)
-  if (bufA.length !== bufB.length) return false
-  return crypto.timingSafeEqual(bufA, bufB)
-}
 
 function envFlag(name: string): boolean {
   const raw = process.env[name]
@@ -235,6 +227,17 @@ export function proxy(request: NextRequest) {
   // Check for session cookie
   const sessionToken = request.cookies.get(MC_SESSION_COOKIE_NAME)?.value || request.cookies.get(LEGACY_MC_SESSION_COOKIE_NAME)?.value
 
+  // A request carrying the gateway's attestation secret is admitted here so it
+  // can reach route auth, which is the only layer that can resolve the identity
+  // header against the database. Without this the documented header-auth flow
+  // does not work at all: attested requests were answered 401 on /api/* and
+  // redirected to /login on page routes, before proxy auth was ever consulted.
+  //
+  // This admits, it does not authenticate. Route auth still requires the
+  // identity header to resolve to an approved user, so an attested request
+  // naming nobody gets no further than it did before.
+  const proxyAttested = hasValidProxyAttestation(request.headers)
+
   // API routes: accept session cookie OR API key
   if (pathname.startsWith('/api/')) {
     const configuredApiKey = (process.env.API_KEY || '').trim()
@@ -247,7 +250,7 @@ export function proxy(request: NextRequest) {
     // Both formats are exactly 48 hex chars after the prefix.
     const looksLikeDbBackedApiKey = /^mca?_[a-f0-9]{48}$/i.test(apiKey)
 
-    if (sessionToken || hasValidApiKey || looksLikeDbBackedApiKey) {
+    if (sessionToken || hasValidApiKey || looksLikeDbBackedApiKey || proxyAttested) {
       const { response, nonce } = nextResponseWithNonce(request)
       return addSecurityHeaders(response, request, nonce)
     }
@@ -256,7 +259,7 @@ export function proxy(request: NextRequest) {
   }
 
   // Page routes: redirect to login if no session
-  if (sessionToken) {
+  if (sessionToken || proxyAttested) {
     const { response, nonce } = nextResponseWithNonce(request)
     return addSecurityHeaders(response, request, nonce)
   }

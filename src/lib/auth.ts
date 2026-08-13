@@ -4,19 +4,9 @@ import { hashPassword, verifyPassword, verifyPasswordWithRehashCheck } from './p
 import { logSecurityEvent } from './security-events'
 import { parseMcSessionCookieHeader } from './session-cookie'
 
-const PROXY_AUTH_SECRET_HEADER = 'x-mc-proxy-secret'
-const MIN_PROXY_AUTH_SECRET_LENGTH = 32
-
-// Values shipped in .env.example. They satisfy the length rule but are public,
-// so treating them as configured would hand the secret to anyone reading the repo.
-const INSECURE_PROXY_AUTH_SECRETS = new Set([
-  'replace-with-at-least-32-random-characters',
-])
-
-// RFC 7230 token. Headers.get() throws a TypeError on anything else, and this
-// runs before any other authentication method, so an invalid configured name
-// would take down session and API-key auth along with it.
-const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+// Configuration rules live in proxy-auth-config so the edge middleware applies
+// exactly the same ones; see that module for why they are not duplicated here.
+import { PROXY_AUTH_SECRET_HEADER, readProxyAuthConfig, safeCompare } from './proxy-auth-config'
 
 // Log once per distinct reason if proxy auth is misconfigured.
 // Deferred to avoid DB access during module initialization.
@@ -72,19 +62,12 @@ export function registerAuthResolver(hook: AuthResolverHook): void {
 
 /**
  * Constant-time string comparison to prevent timing attacks.
+ *
+ * Re-exported from proxy-auth-config, which the edge middleware also imports,
+ * so both layers compare secrets identically. Kept exported here because
+ * existing callers and tests import it from this module.
  */
-export function safeCompare(a: string, b: string): boolean {
-  if (typeof a !== 'string' || typeof b !== 'string') return false
-  const bufA = Buffer.from(a)
-  const bufB = Buffer.from(b)
-  if (bufA.length !== bufB.length) {
-    // Compare against dummy buffer to avoid timing leak on length mismatch
-    const dummy = Buffer.alloc(bufA.length)
-    timingSafeEqual(bufA, dummy)
-    return false
-  }
-  return timingSafeEqual(bufA, bufB)
-}
+export { safeCompare }
 
 export interface User {
   id: number
@@ -486,32 +469,17 @@ export function getUserFromRequest(request: Request): User | null {
   // the app not being reachable except through that gateway. Both are
   // deployment concerns; see SECURITY.md. A missing or short secret fails
   // closed and logs a critical event on the first request.
-  const proxyAuthHeader = (process.env.MC_PROXY_AUTH_HEADER || '').trim()
-  if (proxyAuthHeader) {
-    const proxyAuthSecret = process.env.MC_PROXY_AUTH_SECRET || ''
-    if (!HTTP_HEADER_NAME.test(proxyAuthHeader)) {
-      warnProxyAuthMisconfigOnce(
-        'MC_PROXY_AUTH_HEADER is not a valid HTTP header name — proxy auth disabled',
-      )
-    } else if (proxyAuthHeader.toLowerCase() === PROXY_AUTH_SECRET_HEADER) {
-      // Both reads would return the secret, so with auto-provisioning enabled the
-      // first attested request would persist the secret as a username.
-      warnProxyAuthMisconfigOnce(
-        `MC_PROXY_AUTH_HEADER must not be ${PROXY_AUTH_SECRET_HEADER} — the identity and attestation headers must differ; proxy auth disabled`,
-      )
-    } else if (proxyAuthSecret.length < MIN_PROXY_AUTH_SECRET_LENGTH) {
-      warnProxyAuthMisconfigOnce(
-        `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,
-      )
-    } else if (INSECURE_PROXY_AUTH_SECRETS.has(proxyAuthSecret)) {
-      warnProxyAuthMisconfigOnce(
-        'MC_PROXY_AUTH_SECRET is the placeholder from .env.example, which is public — proxy auth disabled',
-      )
+  const proxyAuthConfig = readProxyAuthConfig()
+  if (proxyAuthConfig.status !== 'disabled') {
+    if (proxyAuthConfig.status === 'misconfigured') {
+      warnProxyAuthMisconfigOnce(proxyAuthConfig.reason)
     } else {
       const presentedSecret = request.headers.get(PROXY_AUTH_SECRET_HEADER) || ''
-      const presentedIdentity = (request.headers.get(proxyAuthHeader) || '').trim()
+      const presentedIdentity = (
+        request.headers.get(proxyAuthConfig.identityHeader) || ''
+      ).trim()
 
-      if (safeCompare(presentedSecret, proxyAuthSecret)) {
+      if (safeCompare(presentedSecret, proxyAuthConfig.secret)) {
         // Past this point the caller holds the secret, so every way the request
         // can still fail is worth a rejection event: it is either a probe using
         // a leaked secret or a gateway sending identities we cannot resolve.
