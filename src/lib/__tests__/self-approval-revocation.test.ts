@@ -61,6 +61,21 @@ describe('a user cannot approve themselves', () => {
     expect(updateUser).toHaveBeenCalled()
   })
 
+  it('refuses when the request began before the operator unapproved the account', async () => {
+    // The authenticated snapshot is taken before `await request.json()`, so a
+    // request started while still approved carries is_approved 1. Comparing
+    // against that snapshot would read 1 -> 1 as unchanged and let the update
+    // through, reapproving the account after the operator unapproved it. The
+    // comparison is against the row read after parsing, so this is refused.
+    const stillApprovedSnapshot = { ...revokedAdmin, is_approved: 1 }
+    const { route, updateUser } = await loadRoute(stillApprovedSnapshot)
+
+    const response = await route.PUT(putRequest({ id: 9, is_approved: 1 }))
+
+    expect(response.status).toBe(400)
+    expect(updateUser).not.toHaveBeenCalled()
+  })
+
   it('still allows an admin to approve someone else', async () => {
     const approver = { ...revokedAdmin, id: 1, username: 'admin', is_approved: 1 }
     const { route, updateUser } = await loadRoute(approver)

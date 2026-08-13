@@ -106,19 +106,30 @@ still authenticate them as their old account.
 Unapproving the account is not sufficient either: `validateSession` does not
 check approval, so a live session survives it.
 
-**Revoke in this order — unapprove the account first, then destroy its sessions
-and API keys.** Unapproval blocks new credentials from being created (local
-login refuses an unapproved user, and the proxy path refuses to resolve to one)
-without touching credentials that already exist. Reversing the order leaves a
-window in which the user logs in again and mints a session that then survives
-the unapproval.
+**Unapproving an account is not revocation, and there is no supported way to end
+another user's sessions on its own.** `destroyAllUserSessions` is reachable from
+exactly two places: the user's own password change, and `deleteUser`. No admin
+route or UI action ends someone else's session, so an unapproved account keeps
+working until its session expires or the account is deleted.
 
-Two traps here. **Deleting the account is not stronger than unapproving it** —
-with `MC_PROXY_AUTH_DEFAULT_ROLE` set, the next attested request finds no row
-and auto-provisions a fresh approved account with that role, so deletion
-re-grants access. And `MC_PROXY_AUTH_DEFAULT_ROLE` is never a revocation
-measure: it is consulted only for identities that do not exist yet, and enabling
-it creates approved accounts automatically. See
+**To revoke a user today, delete the account.** `deleteUser` destroys their
+sessions before removing the row, which makes deletion the only complete
+revocation available. Before deleting, confirm `MC_PROXY_AUTH_DEFAULT_ROLE` is
+unset or the gateway no longer asserts that identity — otherwise the next
+attested request finds no row and auto-provisions a fresh approved account with
+that role, re-granting the access you just removed. If the user knew the global
+`API_KEY`, rotate it too; it is not per-user and deletion does not affect it.
+
+Known gaps, which are why the above is a workaround rather than a procedure:
+
+- Unapproval blocks *new* logins (local login and the proxy path both refuse an
+  unapproved user) but leaves existing sessions valid, and there is no way to
+  clear them short of deletion.
+- While an unapproved admin still holds a live session, role-only checks on the
+  admin routes continue to pass. They can create another approved admin account,
+  which survives any action taken against the original.
+
+Both need an atomic revocation operation rather than documentation. See
 [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication).
 
 Because that secret is the whole of the authentication, two deployment

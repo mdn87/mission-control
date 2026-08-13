@@ -105,22 +105,29 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Cannot change your own role' }, { status: 400 })
     }
 
-    // Prevent approving yourself. validateSession does not check approval, so an
-    // unapproved admin keeps a working session — without this they could restore
-    // their own approval and undo a revocation between its two steps. Resending
-    // the unchanged value is allowed so ordinary self-edits still work.
-    if (
-      userId === currentUser.id
-      && is_approved !== undefined
-      && Number(is_approved) !== Number(currentUser.is_approved ?? 1)
-    ) {
-      return NextResponse.json({ error: 'Cannot change your own approval' }, { status: 400 })
-    }
-
     const workspaceId = currentUser.workspace_id ?? 1
     const existing = getUserById(userId)
     if (!existing || (existing.workspace_id ?? 1) !== workspaceId) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    // Prevent approving yourself. validateSession does not check approval, so an
+    // unapproved admin keeps a working session and could otherwise restore their
+    // own approval. Compared against `existing` rather than the authenticated
+    // snapshot: that snapshot is taken before `await request.json()`, so a
+    // request begun while still approved would carry is_approved 1 and read as
+    // unchanged even after an operator unapproved the account mid-flight.
+    // Resending the row's current value is allowed so ordinary self-edits work.
+    //
+    // This narrows the window, it does not close it — the read and the write are
+    // still separate statements. Full revocation needs an atomic operation; see
+    // the revocation section in SECURITY.md for what is and is not supported.
+    if (
+      userId === currentUser.id
+      && is_approved !== undefined
+      && Number(is_approved) !== Number(existing.is_approved ?? 1)
+    ) {
+      return NextResponse.json({ error: 'Cannot change your own approval' }, { status: 400 })
     }
 
     const updated = updateUser(userId, { display_name, role, password: password || undefined, is_approved, email, avatar_url })

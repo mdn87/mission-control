@@ -412,33 +412,29 @@ configuration is part of the security boundary.
 > changed can still be authenticated as their *old* account by a cookie that has
 > not expired.
 >
-> **Removing access upstream does not remove it here, and the order matters.**
-> Revoke in this sequence:
+> **Removing access upstream does not remove it here, and unapproving is not
+> enough.** `validateSession` does not check approval, and no admin route or UI
+> action ends another user's session — `destroyAllUserSessions` is called only by
+> the user's own password change and by `deleteUser`. An unapproved account
+> therefore keeps working until its session expires.
 >
-> 1. **Unapprove the account first.** This blocks both ways a *new* credential
->    could be created: local login refuses an unapproved user, and the proxy path
->    refuses to resolve to one. It does not touch credentials that already exist.
-> 2. **Then destroy their sessions and API keys.** `validateSession` does not
->    check approval, so an existing session keeps working until it is deleted or
->    expires.
+> **To revoke a user, delete the account**, which destroys their sessions first.
+> Before doing so:
 >
-> Doing it in the other order leaves a window: after the sessions are deleted but
-> before the account is unapproved, the user can log in again and mint a fresh
-> session — which then survives the unapproval, because approval is not checked
-> on validation.
+> 1. Confirm `MC_PROXY_AUTH_DEFAULT_ROLE` is unset, or that the gateway has
+>    stopped asserting that identity. Otherwise deletion makes the identity
+>    *unknown*, and the next attested request auto-provisions a fresh approved
+>    account with the configured role.
+> 2. Rotate the global `API_KEY` if the user knew it. It is not per-user, so
+>    deleting the account does not affect it.
 >
-> The window in *this* order is narrower but was not empty either. Between the
-> two steps the user still holds a fully authorized session, and an admin could
-> previously `PUT /api/auth/users` with their own id and `is_approved: 1` to undo
-> step 1. That route now refuses to change your own approval, so step 1 holds
-> until step 2 completes.
->
-> **Do not delete the account** while `MC_PROXY_AUTH_DEFAULT_ROLE` is set and the
-> gateway may still assert that identity. Deletion does not deny the next
-> request; it makes it *unknown*, and an unknown identity is auto-provisioned as
-> a new approved account with the configured role. Keep the account present and
-> unapproved, or unset `MC_PROXY_AUTH_DEFAULT_ROLE` and confirm the gateway has
-> stopped asserting the identity before removing it.
+> This is a workaround, not a procedure, and two gaps are worth knowing when
+> assessing exposure. Unapproving alone leaves a live session with no supported
+> way to clear it. And while an unapproved admin still holds that session, the
+> admin routes' role-only checks keep passing, so they can create another
+> approved admin that survives whatever is done to the original. Closing those
+> properly needs an atomic revocation operation — one that invalidates
+> credentials and authority together — rather than a documented ordering.
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and
