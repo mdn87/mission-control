@@ -80,11 +80,17 @@ Run `bash scripts/security-audit.sh` to check your deployment automatically.
 `MC_PROXY_AUTH_HEADER` lets a gateway that has already authenticated the user
 pass that identity to Mission Control as an HTTP header. The only credential
 Mission Control checks is `MC_PROXY_AUTH_SECRET` — 32+ random characters that
-the gateway injects as `X-MC-Proxy-Secret`, compared in constant time. A
-missing or shorter secret disables proxy auth entirely and records a
+the gateway injects as `X-MC-Proxy-Secret`, compared in constant time. It must
+not be the `.env.example` placeholder, which is public. A missing, shorter, or
+placeholder secret disables proxy auth entirely and records a
 `proxy_auth_misconfigured` critical event on the first request; requests that
-present proxy headers which fail the check are recorded as
+present proxy headers which fail any later check are recorded as
 `proxy_auth_rejected`.
+
+Note that proxy auth does not currently replace the login form: the edge
+middleware admits requests only on a session cookie or API key, so attested
+browser requests are redirected to `/login` before proxy auth is consulted. See
+[docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication).
 
 Because that secret is the whole of the authentication, two deployment
 controls carry the rest of the weight:

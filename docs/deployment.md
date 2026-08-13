@@ -387,17 +387,30 @@ See `.env.example` for the full list. Key variables:
 
 Setting `MC_PROXY_AUTH_HEADER` lets a gateway that has already authenticated the
 user (Envoy OIDC `claimToHeaders`, an oauth2-proxy, Tailscale Serve) pass that
-identity through, so users never see the local login form. Because the identity
-arrives as an HTTP header, the gateway configuration is part of the security
-boundary.
+identity through. Because the identity arrives as an HTTP header, the gateway
+configuration is part of the security boundary.
+
+> **Known limitation — this does not replace the login form today.**
+> Proxy identity is resolved in route-level auth (`getUserFromRequest`), but the
+> Next.js middleware in `src/proxy.ts` runs first and admits a request only on a
+> session cookie or an API key. An attested request with neither is answered
+> `401` on `/api/*` and redirected to `/login` on page routes, before proxy auth
+> is ever consulted, and `/login` does not exchange a proxy identity for a
+> session. In practice proxy auth currently only helps callers that already
+> carry an API key; browser users still sign in normally. Closing this needs
+> either the middleware to recognise attested requests or a session-bootstrap
+> route, and neither is in place yet.
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and
-compared in constant time. If it is missing or shorter, proxy auth stays
-disabled, every request falls back to normal session login, and a
+compared in constant time. It must not be the placeholder from `.env.example`,
+which is public. If it is missing, shorter, or that placeholder, proxy auth
+stays disabled, every request falls back to normal session login, and a
 `proxy_auth_misconfigured` critical security event is recorded on the first
-request. Requests presenting proxy headers that fail the check are rejected and
-recorded as `proxy_auth_rejected` (rate-limited to one event per minute).
+request. Requests presenting proxy headers that fail any check after that —
+a mismatched secret, a missing identity header, or an identity that does not
+resolve to an approved user — are recorded as `proxy_auth_rejected`
+(rate-limited to one event per minute).
 
 Because that secret is the whole of the authentication, two things outside the
 application carry the rest:
