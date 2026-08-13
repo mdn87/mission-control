@@ -327,5 +327,29 @@ describe('trusted proxy header authentication', () => {
       }))
       expect(user?.username).toBe('cookie-user')
     })
+    it('a live session survives the account being unapproved', async () => {
+      // The revocation guidance in SECURITY.md and docs/deployment.md rests on
+      // this: validateSession selects is_approved but does not gate on it, so
+      // unapproving an account is not sufficient to remove access. If this ever
+      // starts failing, that guidance needs rewriting, not this test.
+      const unapproved = {
+        id: 9, username: 'revoked-user', display_name: 'X', role: 'admin' as const,
+        provider: 'local', email: null, avatar_url: null,
+        is_approved: 0,
+        workspace_id: 1, tenant_id: 1,
+        created_at: 1, updated_at: 1, last_login_at: null, session_id: 1,
+      }
+      const { validateSession } = await loadAuth({
+        database: {
+          prepare: vi.fn((sql: string) => ({
+            get: vi.fn(() => (sql.includes('FROM user_sessions') ? unapproved
+              : sql.includes('FROM workspaces') ? { id: 1, tenant_id: 1 } : undefined)),
+            run: vi.fn(),
+          })),
+        },
+      })
+
+      expect(validateSession('sometoken')?.username).toBe('revoked-user')
+    })
   })
 })
