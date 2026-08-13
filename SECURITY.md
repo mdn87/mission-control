@@ -123,25 +123,34 @@ that role, re-granting the access you just removed. If the user knew the global
 **Deletion is still not complete.** Every mutation route authenticates at the
 top of the handler and only then awaits the request body, so a request begun
 before the deletion carries an authorization decision that deletion cannot
-cancel. Six such routes grant access that outlives it: a new approved admin, an
+cancel. Seven such routes grant access that outlives it: a new approved admin, an
 approved access request, an agent API key, a webhook aimed at an attacker's URL,
-a host OS account, and the gateway bearer credential.
+an OpenClaw cron job, a host OS account, and the gateway bearer credential.
 
-**Two of those leave the application**, and nothing done inside Mission Control
-undoes either. Where the process has passwordless sudo for `useradd`,
+**Three of those leave the application**, and nothing done inside Mission Control
+undoes any of them. Where the process has passwordless sudo for `useradd`,
 `POST /api/super/os-users` creates a **host OS account** (the requested password
 is applied by a separate `chpasswd` call whose failure is ignored, so without
 that privilege too the account exists with no usable password).
 `POST /api/gateways/connect` returns the **real gateway bearer credential** to
-operator+ callers; it authenticates to the separate OpenClaw gateway and
-deleting a Mission Control user does not rotate it.
+operator+ callers, which authenticates to the separate OpenClaw gateway.
+`POST /api/cron` writes an **enabled OpenClaw cron job** with an attacker-chosen
+schedule and agent-turn message, which keeps running afterwards.
 
-Treat revocation as effective only once in-flight requests have drained. When
-checking what happened during the window, note that **the audit log does not
-cover all of it** — neither webhook creation nor agent API key issuance writes an
-audit event. Inspect the `webhooks` and `agent_api_keys` tables directly, the
-audit log for user creation and access-request approvals, the gateway's own
-credential state, and the host's account list on super-admin deployments.
+Treat revocation as effective only once in-flight requests have drained. Then:
+
+- **Rotate the gateway credential.** `POST /api/gateways/connect` returns the
+  existing token unchanged and writes no audit event, so a disclosed credential
+  leaves the gateway's state looking entirely normal. Inspection cannot tell you
+  whether it leaked; assume it did if such a request may have been in flight.
+- **Rotate the global `API_KEY` after deleting the account, never before.**
+  `POST /api/tokens/rotate` needs no request body and returns the new key in
+  plaintext, so a live admin session can rotate again and read the replacement.
+- **Do not rely on the audit log alone.** Webhook creation, agent API key
+  issuance, and cron job creation write no audit events. Inspect the `webhooks`
+  and `agent_api_keys` tables and OpenClaw's `cron/jobs.json` directly, alongside
+  the audit log for user creation and access-request approvals, and the host's
+  account list on super-admin deployments.
 
 Known gaps, which are why the above is a workaround rather than a procedure:
 

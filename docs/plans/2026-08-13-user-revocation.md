@@ -61,8 +61,9 @@ rather than an ordinary race:
 | `POST /api/auth/access-requests` | An account approved with a chosen role (`is_approved = 1`, lines 108/115) |
 | `POST /api/agents/[id]/keys` | An agent API key (`mca_…`, line 153) |
 | `POST /api/webhooks` | A webhook with an attacker-chosen URL and generated secret (lines 75-79) — ongoing event exfiltration |
+| `POST /api/cron` (`add`) | An enabled OpenClaw cron job with an attacker-chosen schedule and agent-turn message (lines 371-413), written to `cron/jobs.json` |
 
-**Two of these leave the application**, and neither is undone by anything done
+**Three of these leave the application**, and none is undone by anything done
 inside Mission Control:
 
 - The host OS account. Creating it needs passwordless sudo for `useradd`. Note
@@ -72,7 +73,12 @@ inside Mission Control:
   password rather than the attacker-chosen one. That is a weaker outcome than a
   password-backed login, not a safe one.
 - The gateway bearer credential, which authenticates directly to the separate
-  OpenClaw gateway and is not rotated by deleting a Mission Control user.
+  OpenClaw gateway and is not rotated by deleting a Mission Control user. Note
+  the route returns the *existing* token unchanged and writes no audit event, so
+  disclosure leaves no trace — the credential state looks normal afterwards, and
+  only rotation resolves it.
+- The OpenClaw cron job, which keeps running agent turns on the attacker's
+  schedule from `cron/jobs.json` after the account is gone.
 
 `PATCH /api/auth/me` mints a session, but **not through the deletion race**: the
 password path reloads `password_hash` from `users` (line ~71) and returns 403
@@ -85,8 +91,13 @@ The count went 2 → 5 → 9 → 6 across successive passes. The nine was wrong 
 both directions, and the errors are worth recording so the next reader calibrates
 against them rather than the number:
 
-- `POST /api/tokens/rotate` was counted and does not belong: it never awaits a
-  body, so there is nothing to stall.
+- `POST /api/tokens/rotate` was counted as a body-stall race and is not one: it
+  never awaits a body. It is still a revocation hazard, just a different kind —
+  it authenticates at line 76 and returns the new key in **plaintext** at line
+  134, so any live admin session can rotate the global key and read the
+  replacement. That makes it an ordering constraint rather than a race: rotate
+  the global key *after* the account is deleted, never before, or the target
+  rotates again and learns the new one.
 - `POST /api/security-scan/fix` was counted and does not belong: it writes the
   regenerated key and gateway token to `.env` and the OpenClaw config and returns
   only counts and generic notes (lines 393-404), so the requester never receives
@@ -156,13 +167,21 @@ belongs here too.
 
 ## Phase 4: audit coverage
 
-Two of the six escalation routes write no audit record at all: `POST /api/webhooks`
-and `POST /api/agents/[id]/keys` never call `logAuditEvent` or insert into
+Four of the seven escalation routes write no audit record at all:
+`POST /api/webhooks`, `POST /api/agents/[id]/keys`, `POST /api/cron`, and
+`POST /api/gateways/connect` never call `logAuditEvent` or insert into
 `audit_log`. An operator investigating a revocation window can therefore find
-nothing in the audit log and still have an attacker's webhook or agent key
-active. Add audit events for both — and check the rest of the credential-issuing
-routes for the same gap while doing it, since these two were found by testing a
-documentation claim rather than by a deliberate sweep.
+nothing in the audit log while an attacker's webhook, agent key, cron job, or
+disclosed gateway credential remains active.
+
+The gateway case is the sharpest: the route returns the existing token unchanged,
+so there is no state difference to detect even in principle. Disclosure is
+unobservable after the fact, which makes rotation the only sound response and an
+audit event the only way to know it is needed.
+
+Add audit events for all four, and sweep the remaining credential-issuing routes
+for the same gap — each of these was found by testing a documentation claim, not
+by a deliberate audit-coverage review.
 
 ## Phase 5: tests and documentation
 
