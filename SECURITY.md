@@ -95,7 +95,185 @@ attested user reaches the dashboard without the login form.
 There is no second factor behind that secret — the middleware cannot query the
 database from the edge runtime, so its API-key check is a shape check only.
 **Treat a leaked proxy secret as full compromise of the application**, not of
-part of it. See
+part of it.
+
+The gateway's identity also does not always win. When the header names someone
+route auth cannot resolve, it falls through to the session cookie and API key
+rather than refusing, so **revoking a user upstream does not by itself revoke
+their access here** — a Mission Control session that has not expired will still
+authenticate them as their old account. An *unapproved* identity always falls
+through this way; an unknown or renamed one does so only when
+`MC_PROXY_AUTH_DEFAULT_ROLE` is unset, since otherwise it is auto-provisioned
+into a new approved account instead.
+
+Unapproving the account is not sufficient either: `validateSession` does not
+check approval, so a live session survives it.
+
+**Unapproving an account is not revocation, and there is no supported way to end
+another user's sessions on its own.** `destroyAllUserSessions` is reachable from
+exactly two places: the user's own password change, and `deleteUser`. No admin
+route or UI action ends someone else's session, so an unapproved account keeps
+working until its session expires or the account is deleted.
+
+**Revoking a user is a procedure, not an action.** Deleting the account is one
+step of it — `deleteUser` destroys their sessions before removing the row, which
+is more than any other single operation does, but on its own it leaves sessions
+re-mintable, credentials live, and work already accepted elsewhere still running.
+Before deleting, confirm `MC_PROXY_AUTH_DEFAULT_ROLE` is unset or the gateway no
+longer asserts that identity, or the next attested request auto-provisions a
+fresh approved account with that role. The full sequence is below; the global
+`API_KEY` is rotated inside it, not before it.
+
+**Deletion is still not complete.** Most mutation routes authenticate at the top
+of the handler and only then await the request body — 89 of them under
+`src/app/api`, though a few such as `POST /api/tokens/rotate` read no body at all.
+The authorization decision is therefore made before anything the operator does,
+and a request begun before the deletion carries it through to completion
+afterwards. Nothing in the application cancels an already-authorized handler.
+
+Review has so far identified **twenty-one** such routes that grant access or
+leave an effect outliving the revocation, **fourteen** of which reach outside
+Mission Control entirely — the gateway, OpenClaw's persistent files, linked
+messaging accounts, GitHub, the Lugos operator service, the host, and the
+deployed release. That count has risen at every review pass, from two to
+twenty-one, so treat it as a floor and the shape of the problem rather than an
+inventory: **any handler that reaches an external system can be used this way.**
+The response below is organised around that rather than around the list.
+
+**The ordering follows one rule: nothing you clean up stays cleaned until
+in-flight handlers are dead.** A request authorized before you started can resume
+at any moment and re-create an account, re-queue a task, or mint a credential you
+just removed. So every enumeration and clean-up step has to come *after* the
+process restart, not before it — and the isolation has to cover every way in,
+not just Mission Control's front door.
+
+**Step 0 — isolate everything the target can reach.** Mission Control, the
+gateway, and host login. Blocking Mission Control alone is not enough: a device
+paired earlier authenticates **directly** to the browser-facing gateway with a
+cached device token (`src/lib/websocket.ts`), and `POST /api/super/os-users` may
+have created a host account whose password the target chose, which bypasses both.
+While the target can still reach Mission Control, no ordering helps at all —
+`PUT /api/settings` upserts arbitrary keys with no allowlist and can overwrite
+`security.api_key_hash` *after* you rotate, and `POST /api/gateways/connect`
+reads the gateway token after its body await.
+
+**Step 1 — stop every scheduler, in both systems.** Mission Control runs
+**twelve** scheduled jobs (`src/lib/scheduler.ts`), not one or two, and several
+act outside the application regardless of ingress: `task_dispatch` and
+`recurring_task_spawn` reach the Claude runtime, provider APIs and host CLIs;
+`aegis_review` invokes a provider or the gateway's `agent` method 30 seconds
+after startup; `webhook_retry` re-delivers stored payloads to enabled external
+URLs every 60 seconds; and the sync and heartbeat jobs talk to the gateway.
+Disable the scheduler as a whole rather than picking jobs — the list above is
+what review has found, and this document has been wrong about every enumeration
+it has attempted.
+
+**There is no supported way to keep it disabled.** `initScheduler()` runs
+unconditionally on runtime startup (`src/lib/db.ts:80-87`), `stopScheduler()` is
+an in-memory function with no route and no persistent setting, so any start of
+Mission Control re-arms all twelve jobs. That is why the containment steps below
+come *before* the process is started again, and why the rotation — which needs
+the process running — is the last thing done under isolation.
+
+OpenClaw runs a **second scheduler** for the `cron/jobs.json` jobs that
+`POST /api/cron` writes. It survives Mission Control being stopped *and* the
+ingress isolation, because it is on the other side of the boundary. Stop it, or
+quarantine suspect jobs, now — reviewing that file afterwards is too late, since
+the jobs run throughout everything below.
+
+**Step 2 — cancel work already accepted outside Mission Control.** This has to
+happen before the process is started again, because starting it re-arms the
+scheduler. Three executors act independently of Mission Control:
+
+- **The gateway.** Many routes dispatch to it — `spawn`, `wake`, `broadcast`,
+  `chat/messages`, `agents/message`, `pipelines/run` and others; a dozen route
+  files reference gateway calls, so treat those as examples rather than a list.
+  Ask the gateway what is running rather than working through routes. Also stop
+  any gateway process started by `gateways/control`.
+- **The provisioner daemon**, on super-admin deployments with live provisioning.
+  `POST /api/super/provision-jobs/[id]/run` sends privileged steps over
+  `/run/mc-provisioner.sock` and the daemon spawns the host command itself, so
+  stopping Mission Control closes the client and not the work. Inspect it and
+  cancel active jobs.
+- **OpenClaw's cron scheduler**, already stopped in step 1.
+
+**Step 3 — stop Mission Control, and verify the deployed revision before
+starting it again.** A stalled `POST /api/releases/update` can leave an older or
+partially built revision on disk, and everything after this would then run under
+that build. Stopping the process is also the only thing that ends handlers
+authorized before isolation; until it happens, nothing below stays done.
+
+**Step 4 — now clean up, with nothing running.**
+
+1. Delete the target's account, and every account whose credentials they created,
+   reset, or saw. `POST /api/auth/users` takes a caller-chosen password, so a
+   second admin they made earlier stays usable and no rotation invalidates it.
+2. Remove their queued and recurring tasks.
+3. Revoke every credential they hold or created: agent API keys, webhooks, and
+   paired devices (`device.token.revoke`). `deleteUser` touches none of those
+   tables, the agent key lookup ignores `created_by`, and webhook delivery selects
+   only on `enabled` and workspace.
+4. Disable or remove any host account created during the window.
+
+**Step 5 — rotate, still isolated.** This is the one step that needs the process
+running, which is why it is last: starting it re-arms the scheduler, so
+everything above must already be done. The global key via `POST /api/tokens/rotate`
+(editing `API_KEY` is not a rotation where a `settings.security.api_key_hash` row
+exists — that row wins until deleted), then **every registered gateway's**
+credential, not just the primary: `POST /api/gateways/connect` serves any
+registered id to operator+ callers.
+
+**Only then lift the isolation**, and re-check the account and task tables once
+more — if any handler survived the restart, this is where it shows.
+
+**Then review what may have been left behind.** Mission Control orchestrates
+other systems, so a request that completed during the window can have effects
+outside it that no rotation reaches. The list below is what review has found so
+far; treat it as illustrative, not complete. Eighteen rounds of review kept
+adding to it, and the underlying property — authorization is decided before the
+body is read, in most of the ~89 mutation handlers — means any handler that
+reaches an external system belongs here.
+
+- **The gateway**: agent runs from `POST /api/spawn`, and turns queued through
+  existing sessions by `POST /api/agents/[id]/wake` or
+  `POST /api/tasks/[id]/broadcast`. Cancel them at the gateway; a Mission Control
+  restart does not retract accepted work. Also check whether a gateway process
+  was started by `POST /api/gateways/control` that was meant to stay stopped.
+- **Every runtime's persistent files, not just OpenClaw's.** Hermes has its own:
+  `POST /api/hermes` writes provider API keys into its `.env` (`set-env`, lines
+  127-144) and overwrites its `SOUL.md` (`set-soul`, lines 150-159), both of which
+  survive a Mission Control restart and steer later Hermes behaviour. Restore
+  those before restarting that runtime.
+- **OpenClaw's persistent files**: `exec-approvals.json` allowlists,
+  `cron/jobs.json` jobs, `openclaw.json` configuration (only gateway auth fields
+  are blocked, so `tools`, `elevated` and `channels` can be weakened), the agent
+  workspace's `AGENTS.md`/`TOOLS.md`/`soul.md`, the skill roots, and the OpenClaw
+  `.env` — `PUT /api/integrations` writes variables there, including advertised
+  credentials such as `OPENCLAW_GATEWAY_TOKEN`. Restore before restarting the
+  gateway.
+- **Linked accounts and devices**: channels linked via `POST /api/channels`, and
+  devices paired via `POST /api/nodes`. Both hold their own credentials at the
+  gateway and must be revoked there.
+- **Third-party systems**: `POST /api/github` uses the stored token to comment,
+  close issues and initialize labels, and `POST /api/lugos/commands` submits
+  approvals and handoffs to the Lugos operator service. Those effects persist
+  wherever they landed and no local rotation reaches them.
+- **The deployment itself**: `POST /api/releases/update` can leave an older or
+  partially built release on disk, and `POST /api/super/os-users` a host account.
+- **The audit log will not show most of this.** Webhook creation, agent key
+  issuance, cron creation, gateway connect, device pairing and exec-approval
+  changes write no audit events. Inspect the underlying tables and files.
+
+Known gaps, which are why the above is a workaround rather than a procedure:
+
+- Unapproval blocks *new* logins (local login and the proxy path both refuse an
+  unapproved user) but leaves existing sessions valid, and there is no way to
+  clear them short of deletion.
+- While an unapproved admin still holds a live session, role-only checks on the
+  admin routes continue to pass. They can create another approved admin account,
+  which survives any action taken against the original.
+
+Both need an atomic revocation operation rather than documentation. See
 [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication).
 
 Because that secret is the whole of the authentication, two deployment

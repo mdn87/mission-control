@@ -469,6 +469,30 @@ export function getUserFromRequest(request: Request): User | null {
   // the app not being reachable except through that gateway. Both are
   // deployment concerns; see SECURITY.md. A missing or short secret fails
   // closed and logs a critical event on the first request.
+  //
+  // This runs *before* the session cookie, deliberately: when proxy auth is
+  // enabled the gateway is the identity authority, so an identity it asserts and
+  // we can resolve takes precedence over any cookie the request also carries.
+  //
+  // The ordering does not widen exposure. Reaching this branch requires the
+  // attestation secret, and anyone holding it authenticates as whoever they name
+  // regardless of which check runs first. Deployments that do not set
+  // MC_PROXY_AUTH_HEADER skip the block entirely.
+  //
+  // It is a hybrid, not an override, and the difference matters. An attested
+  // request whose identity does *not* resolve falls through to the session and
+  // API-key checks below, so a still-valid cookie can authenticate that user's
+  // own account even though the gateway named someone else. That covers an
+  // unapproved identity always — resolveOrProvisionProxyUser returns null from
+  // the existing-row branch before the default role is read — and a renamed or
+  // unknown one when auto-provisioning is off. Precedence therefore holds only
+  // for identities that resolve; it is not a guarantee that the gateway wins.
+  //
+  // Failing closed instead would be more coherent, but it would lock out any
+  // deployment mixing local login with proxy auth, where the gateway injects
+  // headers for users who authenticate locally. That is a behaviour decision
+  // with real breakage risk, not a comment fix, so it is left as it is and
+  // described accurately here.
   const proxyAuthConfig = readProxyAuthConfig()
   if (proxyAuthConfig.status !== 'disabled') {
     if (proxyAuthConfig.status === 'misconfigured') {

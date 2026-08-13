@@ -397,13 +397,124 @@ configuration is part of the security boundary.
 > against the database. Both page routes and `/api/*` are covered, so an
 > attested user reaches the dashboard without seeing the login form.
 >
-> That admission is not authentication — route auth still requires the identity
-> header to resolve to an approved user — but it does mean the secret alone
+> That admission is not authentication — route auth resolves the identity header
+> against the database and returns that user — but it does mean the secret alone
 > determines whether a request is considered to come from the gateway. There is
 > no second factor: the `/api/*` middleware check cannot query the database from
 > the edge runtime, so it only shape-checks dashboard-issued keys, and never
 > treated a key as proof of anything. When assessing a leaked secret or a
 > directly reachable backend, assume the whole surface is exposed.
+>
+> **The gateway's identity does not always win.** If route auth cannot resolve
+> the name — an existing *unapproved* account always, or a renamed or unknown one
+> when `MC_PROXY_AUTH_DEFAULT_ROLE` is unset — it does not stop there. It falls
+> through to the session cookie and API key, so a user whose upstream identity
+> changed can still be authenticated as their *old* account by a cookie that has
+> not expired.
+>
+> **Removing access upstream does not remove it here, and unapproving is not
+> enough.** `validateSession` does not check approval, and no admin route or UI
+> action ends another user's session — `destroyAllUserSessions` is called only by
+> the user's own password change and by `deleteUser`. An unapproved account
+> therefore keeps working until its session expires.
+>
+> **To revoke a user, delete the account**, which destroys their sessions first.
+> Before doing so:
+>
+> 1. Confirm `MC_PROXY_AUTH_DEFAULT_ROLE` is unset, or that the gateway has
+>    stopped asserting that identity. Otherwise deletion makes the identity
+>    *unknown*, and the next attested request auto-provisions a fresh approved
+>    account with the configured role.
+> Rotate the global `API_KEY` **after** the deletion, not here — see below. It is
+> not per-user, so deletion does not affect it, but rotating while the account
+> still has a live session lets the target call `POST /api/tokens/rotate` again
+> and read the replacement.
+>
+> This is a workaround, not a procedure, and three gaps are worth knowing when
+> assessing exposure. Unapproving alone leaves a live session with no supported
+> way to clear it. While an unapproved admin still holds that session, the admin
+> routes' role-only checks keep passing, so they can create another approved
+> admin that survives whatever is done to the original. And deletion does not
+> stop a request that was already authorized: most mutation routes authenticate
+> before awaiting their body — 89 of them, though some read no body at all — so a
+> revoked admin can begin `POST /api/auth/users`, stall, wait out the deletion,
+> and then create a fresh approved admin.
+>
+> Review has so far found **twenty-one** such routes, **fourteen** of which reach
+> outside Mission Control — the gateway, OpenClaw's persistent files, linked
+> messaging accounts, GitHub, the Lugos operator service, the host, and the
+> deployed release. That count rose at every review pass, from two to twenty-one,
+> so treat it as the shape of the problem rather than an inventory: any handler
+> that reaches an external system can be used this way.
+>
+> **The ordering follows one rule: nothing you clean up stays cleaned until
+> in-flight handlers are dead.** A request authorized before you began can resume
+> and re-create an account, re-queue a task, or mint a credential you just
+> removed, so every clean-up step comes *after* the process is stopped.
+>
+> **0. Isolate everything the target can reach** — Mission Control, the gateway,
+> and host login. Mission Control alone is not enough: a previously paired device
+> authenticates directly to the browser-facing gateway with a cached token, and
+> `POST /api/super/os-users` may have created a host account with a password they
+> chose.
+> **1. Stop every scheduler in both systems.** Mission Control runs twelve
+> scheduled jobs, several of which act outside it regardless of ingress —
+> `task_dispatch` and `recurring_task_spawn` reach the Claude runtime, provider
+> APIs and host CLIs; `aegis_review` calls a provider or the gateway 30 seconds
+> after startup; `webhook_retry` re-delivers to external URLs every 60 seconds;
+> the sync and heartbeat jobs talk to the gateway. Disable the scheduler as a
+> whole rather than picking jobs. OpenClaw runs a second scheduler of its own for
+> `cron/jobs.json`, which survives Mission Control being stopped and the isolation
+> alike — stop it or quarantine suspect jobs now. Note there is **no supported way
+> to keep Mission Control's scheduler disabled**: `initScheduler()` runs
+> unconditionally at startup and `stopScheduler()` has no route, so any start
+> re-arms all twelve jobs. That is why the rotation, which needs the process
+> running, comes last.
+>
+> **2. Stop Mission Control and verify the deployed revision** before starting it
+> again — a stalled `POST /api/releases/update` can leave an altered build on disk,
+> and everything after would run under it. Stopping the process is also the only
+> thing that ends already-authorized handlers.
+> **3. Clean up with nothing running**: delete the target's account and any account
+> whose credentials they created, reset or saw (`POST /api/auth/users` takes a
+> caller-chosen password); remove their queued and recurring tasks; revoke their
+> agent API keys, webhooks and paired devices (`device.token.revoke`); disable any
+> host account created during the window.
+> **4. Rotate under isolation**: the global key via `POST /api/tokens/rotate`
+> (editing `API_KEY` is not a rotation where a `settings.security.api_key_hash`
+> row exists), then every registered gateway's credential — `gateways/connect`
+> serves any registered id.
+> **Cancel work already accepted outside Mission Control — before restarting it,
+> since starting re-arms the scheduler.** Three executors act on their own: the
+> gateway (many routes dispatch to it — `spawn`, `wake`, `broadcast`,
+> `chat/messages`, `agents/message`, `pipelines/run` and others, so ask the
+> gateway rather than working through a list), any gateway process started by
+> `gateways/control`, and on super-admin deployments the provisioner daemon,
+> which spawns host commands over `/run/mc-provisioner.sock` and does not stop
+> when Mission Control does.
+>
+> Only then lift the isolation, and re-check the account and task tables once more.
+>
+> Afterwards, review what may have been left behind outside Mission Control:
+> agent runs and queued turns at the gateway (`spawn`, `wake`, `broadcast`), a
+> gateway process started by `gateways/control`, OpenClaw's `exec-approvals.json`,
+> `cron/jobs.json`, `openclaw.json`, agent instruction files, skill roots and
+> `.env` (`integrations` writes there, including `OPENCLAW_GATEWAY_TOKEN`),
+> **Hermes's own `.env` and `SOUL.md`** (`POST /api/hermes`), linked
+> channels, GitHub activity from `POST /api/github`, commands accepted by the
+> Lugos operator service, the deployed release, and host accounts.
+> See [SECURITY.md](../SECURITY.md#trusted-reverse-proxy-authentication) for the
+> full response and why this list is a floor rather than an inventory.
+>
+> The audit log does not record webhook creation, agent key issuance, cron job
+> creation, gateway connect, device pairing, or exec-approval changes — inspect
+> the `webhooks` and `agent_api_keys` tables, OpenClaw's `cron/jobs.json` and
+> `exec-approvals.json`, and the gateway's paired devices directly, alongside the
+> audit log and the host's account list on super-admin deployments.
+>
+> Closing this properly needs an atomic revocation operation and an authority
+> recheck after body parsing, not a documented ordering — see
+> [docs/plans/2026-08-13-user-revocation.md](plans/2026-08-13-user-revocation.md).
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and

@@ -39,17 +39,49 @@ function makeEmptyDatabase() {
   }
 }
 
-async function loadAuth(options: { database?: unknown } = {}) {
+
+/**
+ * A database where the session cookie resolves to one user and the proxy
+ * identity lookup resolves to another (or nobody), so the two paths are
+ * distinguishable in the result.
+ */
+function makeSplitDatabase(options: { proxyUser?: string | null } = {}) {
+  const base = {
+    display_name: 'X', role: 'admin' as const, workspace_id: 1, tenant_id: 1,
+    provider: 'local', email: null, avatar_url: null, is_approved: 1,
+    created_at: 1, updated_at: 1, last_login_at: null,
+  }
+  const cookieUser = { ...base, id: 3, username: 'cookie-user', session_id: 1 }
+  const proxyUser = options.proxyUser ? { ...base, id: 4, username: options.proxyUser } : undefined
+
+  return {
+    prepare: vi.fn((sql: string) => ({
+      get: vi.fn(() => {
+        if (sql.includes('FROM user_sessions')) return cookieUser
+        if (sql.includes('FROM workspaces')) return { id: 1, tenant_id: 1 }
+        if (sql.includes('FROM users u')) return proxyUser
+        return undefined
+      }),
+      run: vi.fn(),
+    })),
+  }
+}
+
+async function loadAuth(options: { database?: unknown; passwordValid?: boolean } = {}) {
   const database = options.database ?? makeAdminDatabase()
   const logSecurityEvent = vi.fn()
+  // Defaults to an always-failing verifier. A test asserting that some *other*
+  // gate rejects a login must pass passwordValid: true, or the password branch
+  // rejects first and the assertion proves nothing.
+  const passwordValid = options.passwordValid ?? false
   vi.doMock('@/lib/db', () => ({
     getDatabase: vi.fn(() => database),
   }))
   vi.doMock('@/lib/security-events', () => ({ logSecurityEvent }))
   vi.doMock('@/lib/password', () => ({
     hashPassword: vi.fn((value: string) => `hashed:${value}`),
-    verifyPassword: vi.fn(() => false),
-    verifyPasswordWithRehashCheck: vi.fn(() => ({ valid: false, needsRehash: false })),
+    verifyPassword: vi.fn(() => passwordValid),
+    verifyPasswordWithRehashCheck: vi.fn(() => ({ valid: passwordValid, needsRehash: false })),
   }))
   const auth = await import('@/lib/auth')
   return { ...auth, logSecurityEvent }
@@ -251,5 +283,104 @@ describe('trusted proxy header authentication', () => {
     const result = requireRole(request, 'admin')
 
     expect(result).toEqual({ error: 'Authentication required', status: 401 })
+  })
+  // The precedence contract, asserted rather than described. Every one of these
+  // corresponds to a sentence in the comment above getUserFromRequest; three
+  // earlier attempts at stating it in prose were wrong.
+  describe('precedence between proxy identity and the session cookie', () => {
+    const SECRET = '0123456789abcdef0123456789abcdef'
+    const COOKIE = `${'__Host-mc-session'}=sometoken`
+
+    it('a resolvable proxy identity wins over a session cookie', async () => {
+      const { getUserFromRequest } = await loadAuth({
+        database: makeSplitDatabase({ proxyUser: 'gateway-user' }),
+      })
+      const user = getUserFromRequest(new Request('http://localhost/api/x', {
+        headers: { 'x-mc-proxy-secret': SECRET, 'x-user-email': 'gateway-user', cookie: COOKIE },
+      }))
+      expect(user?.username).toBe('gateway-user')
+    })
+
+    it('an unresolvable proxy identity falls through to the cookie', async () => {
+      // The hybrid: the gateway named someone we cannot resolve, and the request
+      // is still authenticated — as the cookie's owner, not the named identity.
+      const { getUserFromRequest } = await loadAuth({
+        database: makeSplitDatabase({ proxyUser: null }),
+      })
+      const user = getUserFromRequest(new Request('http://localhost/api/x', {
+        headers: { 'x-mc-proxy-secret': SECRET, 'x-user-email': 'ghost', cookie: COOKIE },
+      }))
+      expect(user?.username).toBe('cookie-user')
+    })
+
+    it('an unresolvable proxy identity with no other credential resolves to nobody', async () => {
+      const { getUserFromRequest } = await loadAuth({ database: makeEmptyDatabase() })
+      const user = getUserFromRequest(new Request('http://localhost/api/x', {
+        headers: { 'x-mc-proxy-secret': SECRET, 'x-user-email': 'ghost' },
+      }))
+      expect(user).toBeNull()
+    })
+
+    it('the cookie is used normally when proxy auth is not configured', async () => {
+      delete process.env.MC_PROXY_AUTH_HEADER
+      const { getUserFromRequest } = await loadAuth({
+        database: makeSplitDatabase({ proxyUser: 'gateway-user' }),
+      })
+      const user = getUserFromRequest(new Request('http://localhost/api/x', {
+        headers: { 'x-mc-proxy-secret': SECRET, 'x-user-email': 'gateway-user', cookie: COOKIE },
+      }))
+      expect(user?.username).toBe('cookie-user')
+    })
+    it('a live session survives the account being unapproved', async () => {
+      // The revocation guidance in SECURITY.md and docs/deployment.md rests on
+      // this: validateSession selects is_approved but does not gate on it, so
+      // unapproving an account is not sufficient to remove access. If this ever
+      // starts failing, that guidance needs rewriting, not this test.
+      const unapproved = {
+        id: 9, username: 'revoked-user', display_name: 'X', role: 'admin' as const,
+        provider: 'local', email: null, avatar_url: null,
+        is_approved: 0,
+        workspace_id: 1, tenant_id: 1,
+        created_at: 1, updated_at: 1, last_login_at: null, session_id: 1,
+      }
+      const { validateSession } = await loadAuth({
+        database: {
+          prepare: vi.fn((sql: string) => ({
+            get: vi.fn(() => (sql.includes('FROM user_sessions') ? unapproved
+              : sql.includes('FROM workspaces') ? { id: 1, tenant_id: 1 } : undefined)),
+            run: vi.fn(),
+          })),
+        },
+      })
+
+      expect(validateSession('sometoken')?.username).toBe('revoked-user')
+    })
+    it('login refuses an unapproved user, which is why unapproval must come first', async () => {
+      // The revocation order in SECURITY.md depends on this asymmetry:
+      // authenticateUser gates on is_approved, validateSession does not. So
+      // unapproving blocks new credentials while leaving existing ones alive,
+      // and the sessions must be destroyed after it rather than before.
+      const row = {
+        id: 9, username: 'revoked-user', display_name: 'X', role: 'admin' as const,
+        provider: 'local', email: null, avatar_url: null,
+        is_approved: 0, workspace_id: 1, tenant_id: 1,
+        created_at: 1, updated_at: 1, last_login_at: null,
+        password_hash: 'hashed:pw',
+      }
+      // passwordValid: true is load-bearing. With the default failing verifier
+      // this assertion would hold even if the approval gate were deleted, since
+      // the password branch would reject first.
+      const { authenticateUser } = await loadAuth({
+        passwordValid: true,
+        database: {
+          prepare: vi.fn((sql: string) => ({
+            get: vi.fn(() => (sql.includes('FROM workspaces') ? { id: 1, tenant_id: 1 } : row)),
+            run: vi.fn(),
+          })),
+        },
+      })
+
+      expect(authenticateUser('revoked-user', 'pw')).toBeNull()
+    })
   })
 })
