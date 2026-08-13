@@ -480,11 +480,13 @@ export function getUserFromRequest(request: Request): User | null {
   // MC_PROXY_AUTH_HEADER skip the block entirely.
   //
   // It is a hybrid, not an override, and the difference matters. An attested
-  // request whose identity does *not* resolve — renamed, unknown, or unapproved,
-  // with auto-provisioning off — falls through to the session and API-key checks
-  // below, so a still-valid cookie can authenticate that user's own account even
-  // though the gateway named someone else. Precedence therefore holds only for
-  // identities that resolve; it is not a guarantee that the gateway always wins.
+  // request whose identity does *not* resolve falls through to the session and
+  // API-key checks below, so a still-valid cookie can authenticate that user's
+  // own account even though the gateway named someone else. That covers an
+  // unapproved identity always — resolveOrProvisionProxyUser returns null from
+  // the existing-row branch before the default role is read — and a renamed or
+  // unknown one when auto-provisioning is off. Precedence therefore holds only
+  // for identities that resolve; it is not a guarantee that the gateway wins.
   //
   // Failing closed instead would be more coherent, but it would lock out any
   // deployment mixing local login with proxy auth, where the gateway injects

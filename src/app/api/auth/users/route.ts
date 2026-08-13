@@ -105,6 +105,18 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Cannot change your own role' }, { status: 400 })
     }
 
+    // Prevent approving yourself. validateSession does not check approval, so an
+    // unapproved admin keeps a working session — without this they could restore
+    // their own approval and undo a revocation between its two steps. Resending
+    // the unchanged value is allowed so ordinary self-edits still work.
+    if (
+      userId === currentUser.id
+      && is_approved !== undefined
+      && Number(is_approved) !== Number(currentUser.is_approved ?? 1)
+    ) {
+      return NextResponse.json({ error: 'Cannot change your own approval' }, { status: 400 })
+    }
+
     const workspaceId = currentUser.workspace_id ?? 1
     const existing = getUserById(userId)
     if (!existing || (existing.workspace_id ?? 1) !== workspaceId) {

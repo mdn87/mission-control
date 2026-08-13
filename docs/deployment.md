@@ -427,6 +427,12 @@ configuration is part of the security boundary.
 > session — which then survives the unapproval, because approval is not checked
 > on validation.
 >
+> The window in *this* order is narrower but was not empty either. Between the
+> two steps the user still holds a fully authorized session, and an admin could
+> previously `PUT /api/auth/users` with their own id and `is_approved: 1` to undo
+> step 1. That route now refuses to change your own approval, so step 1 holds
+> until step 2 completes.
+>
 > **Do not delete the account** while `MC_PROXY_AUTH_DEFAULT_ROLE` is set and the
 > gateway may still assert that identity. Deletion does not deny the next
 > request; it makes it *unknown*, and an unknown identity is auto-provisioned as
