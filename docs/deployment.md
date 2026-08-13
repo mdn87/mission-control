@@ -410,10 +410,22 @@ configuration is part of the security boundary.
 > `MC_PROXY_AUTH_DEFAULT_ROLE` unset — route auth does not stop there. It falls
 > through to the session cookie and API key, so a user whose upstream identity
 > changed can still be authenticated as their *old* account by a cookie that has
-> not expired. Revoking access upstream therefore does not by itself revoke
-> access here; end the Mission Control session too, or keep
-> `MC_PROXY_AUTH_DEFAULT_ROLE` set so identities resolve rather than falling
-> through.
+> not expired.
+>
+> **Removing access upstream does not remove it here.** Two things that look
+> like remedies are not:
+>
+> - *Unapproving the account* stops the proxy path resolving to it, but
+>   `validateSession` does not check approval, so an existing session keeps
+>   working until it expires.
+> - *Setting `MC_PROXY_AUTH_DEFAULT_ROLE`* does not help at all. An existing
+>   unapproved user is refused before that setting is consulted, and for an
+>   *unknown* identity it creates a new approved account — expanding access
+>   rather than restricting it.
+>
+> To actually revoke someone, **end their Mission Control sessions** (and any API
+> keys they hold); unapprove or remove the account as well so new ones cannot be
+> created.
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and

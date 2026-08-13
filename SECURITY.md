@@ -101,7 +101,15 @@ The gateway's identity also does not always win. When the header names someone
 unknown or unapproved, route auth falls through to the session cookie and API
 key rather than refusing, so **revoking a user upstream does not by itself
 revoke their access here** — a Mission Control session that has not expired will
-still authenticate them as their old account. End the session too. See
+still authenticate them as their old account.
+
+Unapproving the account is not sufficient either: `validateSession` does not
+check approval, so a live session survives it. **To revoke access, end the
+user's Mission Control sessions and API keys**, then unapprove or remove the
+account so new ones cannot be created. Do not reach for
+`MC_PROXY_AUTH_DEFAULT_ROLE` here — it is consulted only for identities that do
+not exist yet, and enabling it creates approved accounts automatically, which
+widens access rather than restricting it. See
 [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication).
 
 Because that secret is the whole of the authentication, two deployment
