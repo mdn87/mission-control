@@ -115,15 +115,14 @@ exactly two places: the user's own password change, and `deleteUser`. No admin
 route or UI action ends someone else's session, so an unapproved account keeps
 working until its session expires or the account is deleted.
 
-**To revoke a user today, delete the account.** `deleteUser` destroys their
-sessions before removing the row, which makes deletion the most complete
-revocation available. Before deleting, confirm `MC_PROXY_AUTH_DEFAULT_ROLE` is
-unset or the gateway no longer asserts that identity — otherwise the next
-attested request finds no row and auto-provisions a fresh approved account with
-that role, re-granting the access you just removed. The global `API_KEY` is not
-per-user and deletion does not affect it, but **do not rotate it yet** — rotation
-happens under isolation, in the sequence below, and deletion itself is only one
-step of that sequence.
+**Revoking a user is a procedure, not an action.** Deleting the account is one
+step of it — `deleteUser` destroys their sessions before removing the row, which
+is more than any other single operation does, but on its own it leaves sessions
+re-mintable, credentials live, and work already accepted elsewhere still running.
+Before deleting, confirm `MC_PROXY_AUTH_DEFAULT_ROLE` is unset or the gateway no
+longer asserts that identity, or the next attested request auto-provisions a
+fresh approved account with that role. The full sequence is below; the global
+`API_KEY` is rotated inside it, not before it.
 
 **Deletion is still not complete.** Most mutation routes authenticate at the top
 of the handler and only then await the request body — 89 of them under
@@ -141,48 +140,60 @@ twenty-one, so treat it as a floor and the shape of the problem rather than an
 inventory: **any handler that reaches an external system can be used this way.**
 The response below is organised around that rather than around the list.
 
-**Isolate first — Mission Control *and* the gateway — and stay isolated until
-every credential is revoked.** This is step zero. Blocking only Mission Control
-is not enough: a device paired earlier authenticates **directly** to the
-browser-facing gateway with a cached device token (`src/lib/websocket.ts`), so
-that path does not pass through anything you closed. And while the target can
-still reach Mission Control, no ordering of restarts and rotations helps —
+**The ordering follows one rule: nothing you clean up stays cleaned until
+in-flight handlers are dead.** A request authorized before you started can resume
+at any moment and re-create an account, re-queue a task, or mint a credential you
+just removed. So every enumeration and clean-up step has to come *after* the
+process restart, not before it — and the isolation has to cover every way in,
+not just Mission Control's front door.
+
+**Step 0 — isolate everything the target can reach.** Mission Control, the
+gateway, and host login. Blocking Mission Control alone is not enough: a device
+paired earlier authenticates **directly** to the browser-facing gateway with a
+cached device token (`src/lib/websocket.ts`), and `POST /api/super/os-users` may
+have created a host account whose password the target chose, which bypasses both.
+While the target can still reach Mission Control, no ordering helps at all —
 `PUT /api/settings` upserts arbitrary keys with no allowlist and can overwrite
-`security.api_key_hash` with their own hash *after* you rotate, and
-`POST /api/gateways/connect` reads the gateway token after its body await, so it
-captures whatever the replacement is.
+`security.api_key_hash` *after* you rotate, and `POST /api/gateways/connect`
+reads the gateway token after its body await.
 
-While isolated:
+**Step 1 — stop the schedulers.** `task_dispatch` and `recurring_task_spawn` run
+every 60 seconds, so a live scheduler will claim tasks and create recurrences
+while you work. Isolation does not contain them: their dispatch branches reach
+the Claude runtime, provider APIs and host CLIs directly.
 
-1. **Quarantine the target's queued and recurring tasks before restarting.**
-   The scheduler's first scans run 10 and 20 seconds after startup
-   (`src/lib/scheduler.ts`), so a restart with their tasks still queued executes
-   attacker-authored prompts through the gateway, provider APIs or host CLIs
-   while the rest of this is still in progress. Deleting the user does not remove
-   those rows.
-2. **Delete the account — and any account whose credentials the target created,
-   reset, or saw.** `POST /api/auth/users` takes a caller-chosen password, so a
-   second admin they created earlier (or through a request that completed before
-   isolation) stays usable: no rotation here invalidates a local password.
-3. **Restart the Mission Control process.** This is what ends handlers that were
-   already authorized; nothing else in this list does.
-4. **Rotate the global key with `POST /api/tokens/rotate`.** Editing the
-   `API_KEY` environment variable is **not** a rotation where a
-   `settings.security.api_key_hash` row exists — `matchesGlobalApiKey` gives that
-   row precedence and only falls back to the environment when it is absent. To
-   rotate by environment, delete that row as part of the change.
-5. **Rotate the credential of every registered gateway, not just the primary.**
-   `POST /api/gateways/connect` accepts any registered gateway id and returns
-   that gateway's stored token to operator+ callers; only the primary uses the
-   detected OpenClaw credential. Enumerate them.
-6. **Revoke every credential the target holds or created**: agent API keys,
-   webhooks, and **paired devices** (`device.token.revoke` via `/api/nodes`).
-   `deleteUser` touches none of these tables, the agent key lookup ignores
-   `created_by`, webhook delivery selects only on `enabled` and workspace, and a
-   paired device token is what lets them reach the gateway directly. Any of these
-   from months ago outlives every step above.
+**Step 2 — stop Mission Control, and verify the deployed revision before
+starting it again.** A stalled `POST /api/releases/update` can leave an older or
+partially built revision on disk, and everything after this would then run under
+that build. Stopping the process is also the only thing that ends handlers
+authorized before isolation; until it happens, nothing below stays done.
 
-Only then lift the isolation.
+**Step 3 — now clean up, with nothing running.**
+
+1. Delete the target's account, and every account whose credentials they created,
+   reset, or saw. `POST /api/auth/users` takes a caller-chosen password, so a
+   second admin they made earlier stays usable and no rotation invalidates it.
+2. Remove their queued and recurring tasks.
+3. Revoke every credential they hold or created: agent API keys, webhooks, and
+   paired devices (`device.token.revoke`). `deleteUser` touches none of those
+   tables, the agent key lookup ignores `created_by`, and webhook delivery selects
+   only on `enabled` and workspace.
+4. Disable or remove any host account created during the window.
+
+**Step 4 — rotate, still isolated.** The global key via `POST /api/tokens/rotate`
+(editing `API_KEY` is not a rotation where a `settings.security.api_key_hash` row
+exists — that row wins until deleted), then **every registered gateway's**
+credential, not just the primary: `POST /api/gateways/connect` serves any
+registered id to operator+ callers.
+
+**Step 5 — cancel work already accepted by the gateway** — runs from `spawn`,
+turns queued by `wake` or `broadcast`, and any gateway process started by
+`gateways/control`. None of this is reachable from Mission Control's own state,
+and restarting Mission Control does not retract it, so it has to be stopped at
+the gateway before you reopen anything.
+
+**Only then lift the isolation**, and re-check the account and task tables once
+more — if any handler survived the restart, this is where it shows.
 
 **Then review what may have been left behind.** Mission Control orchestrates
 other systems, so a request that completed during the window can have effects

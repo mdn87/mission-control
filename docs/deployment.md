@@ -447,27 +447,37 @@ configuration is part of the security boundary.
 > so treat it as the shape of the problem rather than an inventory: any handler
 > that reaches an external system can be used this way.
 >
-> **Isolate Mission Control *and* the gateway first, and stay isolated until every
-> credential is revoked.** Blocking only Mission Control is insufficient — a
-> previously paired device authenticates directly to the browser-facing gateway
-> with a cached device token, bypassing anything you closed. And while the target
-> can still reach Mission Control, no ordering of restarts and rotations helps:
-> `PUT /api/settings` upserts arbitrary keys with no allowlist and can overwrite
-> `security.api_key_hash` after you rotate, and `gateways/connect` reads its token
-> after the body await.
+> **The ordering follows one rule: nothing you clean up stays cleaned until
+> in-flight handlers are dead.** A request authorized before you began can resume
+> and re-create an account, re-queue a task, or mint a credential you just
+> removed, so every clean-up step comes *after* the process is stopped.
 >
-> While isolated, in order: **quarantine the target's queued and recurring tasks**
-> (the scheduler's first scans run 10 and 20 seconds after startup, so restarting
-> with them queued executes attacker-authored prompts mid-procedure); **delete the
-> account and any account whose credentials the target created, reset or saw** —
-> `POST /api/auth/users` takes a caller-chosen password and no rotation
-> invalidates it; **restart**, which is the only step that ends already-authorized
-> handlers; **rotate the global key** with `POST /api/tokens/rotate` (editing
-> `API_KEY` is not a rotation where a `settings.security.api_key_hash` row
-> exists); **rotate every registered gateway's credential**, not just the primary,
-> since `gateways/connect` serves any registered id; and **revoke every agent API
-> key, webhook and paired device** the target holds or created — `deleteUser`
-> touches none of those tables. Only then lift the isolation.
+> **0. Isolate everything the target can reach** — Mission Control, the gateway,
+> and host login. Mission Control alone is not enough: a previously paired device
+> authenticates directly to the browser-facing gateway with a cached token, and
+> `POST /api/super/os-users` may have created a host account with a password they
+> chose.
+> **1. Stop the schedulers.** `task_dispatch` and `recurring_task_spawn` run every
+> 60 seconds and reach the Claude runtime, provider APIs and host CLIs directly,
+> so isolation does not contain them.
+> **2. Stop Mission Control and verify the deployed revision** before starting it
+> again — a stalled `POST /api/releases/update` can leave an altered build on disk,
+> and everything after would run under it. Stopping the process is also the only
+> thing that ends already-authorized handlers.
+> **3. Clean up with nothing running**: delete the target's account and any account
+> whose credentials they created, reset or saw (`POST /api/auth/users` takes a
+> caller-chosen password); remove their queued and recurring tasks; revoke their
+> agent API keys, webhooks and paired devices (`device.token.revoke`); disable any
+> host account created during the window.
+> **4. Rotate under isolation**: the global key via `POST /api/tokens/rotate`
+> (editing `API_KEY` is not a rotation where a `settings.security.api_key_hash`
+> row exists), then every registered gateway's credential — `gateways/connect`
+> serves any registered id.
+> **5. Cancel work the gateway already accepted** — runs from `spawn`, turns from
+> `wake`/`broadcast`, any process started by `gateways/control`. Restarting
+> Mission Control does not retract it.
+>
+> Only then lift the isolation, and re-check the account and task tables once more.
 >
 > Afterwards, review what may have been left behind outside Mission Control:
 > agent runs and queued turns at the gateway (`spawn`, `wake`, `broadcast`), a
