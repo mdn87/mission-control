@@ -98,10 +98,13 @@ database from the edge runtime, so its API-key check is a shape check only.
 part of it.
 
 The gateway's identity also does not always win. When the header names someone
-unknown or unapproved, route auth falls through to the session cookie and API
-key rather than refusing, so **revoking a user upstream does not by itself
-revoke their access here** — a Mission Control session that has not expired will
-still authenticate them as their old account.
+route auth cannot resolve, it falls through to the session cookie and API key
+rather than refusing, so **revoking a user upstream does not by itself revoke
+their access here** — a Mission Control session that has not expired will still
+authenticate them as their old account. An *unapproved* identity always falls
+through this way; an unknown or renamed one does so only when
+`MC_PROXY_AUTH_DEFAULT_ROLE` is unset, since otherwise it is auto-provisioned
+into a new approved account instead.
 
 Unapproving the account is not sufficient either: `validateSession` does not
 check approval, so a live session survives it.
@@ -117,8 +120,11 @@ sessions before removing the row, which makes deletion the most complete
 revocation available. Before deleting, confirm `MC_PROXY_AUTH_DEFAULT_ROLE` is
 unset or the gateway no longer asserts that identity — otherwise the next
 attested request finds no row and auto-provisions a fresh approved account with
-that role, re-granting the access you just removed. If the user knew the global
-`API_KEY`, rotate it too; it is not per-user and deletion does not affect it.
+that role, re-granting the access you just removed. The global `API_KEY` is not
+per-user and deletion does not affect it, but **do not rotate it yet** — that
+comes after the deletion and restart below, because rotating while the account
+still holds a live session lets the target rotate again and read the
+replacement.
 
 **Deletion is still not complete.** Every mutation route authenticates at the
 top of the handler and only then awaits the request body, so a request begun

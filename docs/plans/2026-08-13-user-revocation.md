@@ -27,12 +27,18 @@ create a new local admin with a chosen password, and `createUser` defaults
 anything done to the original, so revocation can be defeated by acting before
 the session is cleared.
 
-**4. `PATCH /api/auth/me` can mint a session after the operator's deletion.**
+**4. `PATCH /api/auth/me` can mint a session after sessions are cleared.**
 The handler calls `destroyAllUserSessions` (line 101), then unconditionally
 `createSession` (line ~124) with no approval recheck. A user can let the handler
-authenticate, stall the body read until the operator has deleted their sessions,
-then complete a password change and receive a fresh session. Affects non-admin
-users too.
+authenticate, stall the body read until the operator has cleared their sessions,
+then complete a password change and receive a fresh one. Affects non-admin users
+too.
+
+This is a race against **clearing sessions, not against deleting the account**:
+the password path reloads `password_hash` from `users` after parsing and returns
+403 once the row is gone, and a display-only update returns 404. It therefore
+matters for problem 1, where sessions cannot be cleared any other way, and not
+for the deletion workaround.
 
 **5. Authorization is decided before the request body is read, everywhere.**
 Handlers call `getUserFromRequest` or `requireRole` at the top and only then
@@ -64,7 +70,7 @@ rather than an ordinary race:
 | `POST /api/cron` (`add`) | An enabled OpenClaw cron job with an attacker-chosen schedule and agent-turn message (lines 371-413), written to `cron/jobs.json` |
 | `POST /api/nodes` | An approved gateway device pairing (auth line 97, body await 102, `device.pair.approve` 132-134); the paired device holds its own token |
 
-**Three of these leave the application**, and none is undone by anything done
+**Four of these leave the application**, and none is undone by anything done
 inside Mission Control:
 
 - The host OS account. Creating it needs passwordless sudo for `useradd`. Note
@@ -80,6 +86,9 @@ inside Mission Control:
   only rotation resolves it.
 - The OpenClaw cron job, which keeps running agent turns on the attacker's
   schedule from `cron/jobs.json` after the account is gone.
+- The paired gateway device, which holds its own token for the separate gateway.
+  Deleting the Mission Control user does not revoke the pairing; it has to be
+  revoked at the gateway.
 
 `PATCH /api/auth/me` mints a session, but **not through the deletion race**: the
 password path reloads `password_hash` from `users` (line ~71) and returns 403
@@ -184,12 +193,16 @@ belongs here too.
 
 ## Phase 4: audit coverage
 
-Four of the seven escalation routes write no audit record at all:
-`POST /api/webhooks`, `POST /api/agents/[id]/keys`, `POST /api/cron`, and
-`POST /api/gateways/connect` never call `logAuditEvent` or insert into
-`audit_log`. An operator investigating a revocation window can therefore find
-nothing in the audit log while an attacker's webhook, agent key, cron job, or
-disclosed gateway credential remains active.
+Five of the eight escalation routes write no audit record at all:
+`POST /api/webhooks`, `POST /api/agents/[id]/keys`, `POST /api/cron`,
+`POST /api/gateways/connect`, and `POST /api/nodes` never call `logAuditEvent` or
+insert into `audit_log`. An operator investigating a revocation window can
+therefore find nothing in the audit log while an attacker's webhook, agent key,
+cron job, paired device, or disclosed gateway credential remains active.
+
+Device pairing matters most among the additions, because the resulting credential
+lives at the gateway rather than in Mission Control — unobservable here and
+unrevoked by anything done here.
 
 The gateway case is the sharpest: the route returns the existing token unchanged,
 so there is no state difference to detect even in principle. Disclosure is

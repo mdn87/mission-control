@@ -94,22 +94,27 @@ export async function POST(request: NextRequest) {
   }
 
   const email = String(reqRow.email || '').toLowerCase()
+  const providerUserId = reqRow.provider_user_id ? String(reqRow.provider_user_id) : null
 
-  // Approving resolves a user by email and sets is_approved = 1, so without this
-  // an unapproved admin could restore their own approval here instead of through
+  // Approving resolves a user and sets is_approved = 1, so without this an
+  // unapproved admin could restore their own approval here instead of through
   // PUT /api/auth/users, which refuses it. Failing a Google login while
   // unapproved is enough to create the pending request they would then approve.
-  const selfMatch = db.prepare(
-    'SELECT id FROM users WHERE lower(email) = ? AND id = ?'
-  ).get(email, admin.id) as { id: number } | undefined
-  if (selfMatch || (admin.email || '').toLowerCase() === email) {
+  //
+  // This repeats the transaction's own resolution rather than matching on email
+  // alone: the same lookup also matches on provider identity, so an admin whose
+  // email changed still resolves to their existing row by a stable
+  // provider_user_id and would slip past an email-only check.
+  const wouldResolveTo = db.prepare(
+    'SELECT id FROM users WHERE lower(email) = ? OR (provider = ? AND provider_user_id = ?) ORDER BY id ASC LIMIT 1'
+  ).get(email, 'google', providerUserId || '') as { id: number } | undefined
+  if (wouldResolveTo?.id === admin.id || (admin.email || '').toLowerCase() === email) {
     return NextResponse.json(
       { error: 'Cannot approve an access request for your own account' },
       { status: 400 },
     )
   }
 
-  const providerUserId = reqRow.provider_user_id ? String(reqRow.provider_user_id) : null
   const displayName = String(reqRow.display_name || email.split('@')[0] || 'Google User')
   const avatarUrl = reqRow.avatar_url ? String(reqRow.avatar_url) : null
 

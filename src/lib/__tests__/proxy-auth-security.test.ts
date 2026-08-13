@@ -67,17 +67,21 @@ function makeSplitDatabase(options: { proxyUser?: string | null } = {}) {
   }
 }
 
-async function loadAuth(options: { database?: unknown } = {}) {
+async function loadAuth(options: { database?: unknown; passwordValid?: boolean } = {}) {
   const database = options.database ?? makeAdminDatabase()
   const logSecurityEvent = vi.fn()
+  // Defaults to an always-failing verifier. A test asserting that some *other*
+  // gate rejects a login must pass passwordValid: true, or the password branch
+  // rejects first and the assertion proves nothing.
+  const passwordValid = options.passwordValid ?? false
   vi.doMock('@/lib/db', () => ({
     getDatabase: vi.fn(() => database),
   }))
   vi.doMock('@/lib/security-events', () => ({ logSecurityEvent }))
   vi.doMock('@/lib/password', () => ({
     hashPassword: vi.fn((value: string) => `hashed:${value}`),
-    verifyPassword: vi.fn(() => false),
-    verifyPasswordWithRehashCheck: vi.fn(() => ({ valid: false, needsRehash: false })),
+    verifyPassword: vi.fn(() => passwordValid),
+    verifyPasswordWithRehashCheck: vi.fn(() => ({ valid: passwordValid, needsRehash: false })),
   }))
   const auth = await import('@/lib/auth')
   return { ...auth, logSecurityEvent }
@@ -363,7 +367,11 @@ describe('trusted proxy header authentication', () => {
         created_at: 1, updated_at: 1, last_login_at: null,
         password_hash: 'hashed:pw',
       }
+      // passwordValid: true is load-bearing. With the default failing verifier
+      // this assertion would hold even if the approval gate were deleted, since
+      // the password branch would reject first.
       const { authenticateUser } = await loadAuth({
+        passwordValid: true,
         database: {
           prepare: vi.fn((sql: string) => ({
             get: vi.fn(() => (sql.includes('FROM workspaces') ? { id: 1, tenant_id: 1 } : row)),
