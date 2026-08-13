@@ -2,13 +2,10 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto'
 import { getDatabase } from './db'
 import { hashPassword, verifyPassword, verifyPasswordWithRehashCheck } from './password'
 import { logSecurityEvent } from './security-events'
-import { extractClientIpFromTrusted } from './request'
 import { parseMcSessionCookieHeader } from './session-cookie'
 
-// Trusted IPs for proxy auth header (comma-separated)
-const PROXY_AUTH_TRUSTED_IPS = new Set(
-  (process.env.MC_PROXY_AUTH_TRUSTED_IPS || '').split(',').map(s => s.trim()).filter(Boolean)
-)
+const PROXY_AUTH_SECRET_HEADER = 'x-mc-proxy-secret'
+const MIN_PROXY_AUTH_SECRET_LENGTH = 32
 
 // Log once at startup if proxy auth is misconfigured.
 // Deferred to avoid DB access during module initialization.
@@ -22,7 +19,7 @@ function warnProxyAuthMisconfigOnce(): void {
       severity: 'critical',
       source: 'auth',
       detail: JSON.stringify({
-        reason: 'MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_TRUSTED_IPS is empty — proxy auth disabled',
+        reason: `MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is shorter than ${MIN_PROXY_AUTH_SECRET_LENGTH} characters — proxy auth disabled`,
       }),
       workspace_id: 1,
       tenant_id: 1,
@@ -440,20 +437,18 @@ export function getUserFromRequest(request: Request): User | null {
   // When the gateway has already authenticated the user and injects their username
   // as a trusted header (e.g. X-Auth-Username from Envoy OIDC claimToHeaders),
   // skip the local login form entirely.
-  // Requires MC_PROXY_AUTH_TRUSTED_IPS — without it, proxy auth is disabled
-  // and a critical security event is logged on the first request.
+  // Requires a high-entropy shared secret that the trusted gateway injects
+  // after stripping any client-supplied identity and attestation headers.
   const proxyAuthHeader = (process.env.MC_PROXY_AUTH_HEADER || '').trim()
   if (proxyAuthHeader) {
-    if (PROXY_AUTH_TRUSTED_IPS.size === 0) {
+    const proxyAuthSecret = process.env.MC_PROXY_AUTH_SECRET || ''
+    if (proxyAuthSecret.length < MIN_PROXY_AUTH_SECRET_LENGTH) {
       warnProxyAuthMisconfigOnce()
-    } else {
-      const clientIp = extractClientIpFromTrusted(request, PROXY_AUTH_TRUSTED_IPS, '')
-      if (clientIp && PROXY_AUTH_TRUSTED_IPS.has(clientIp)) {
-        const proxyUsername = (request.headers.get(proxyAuthHeader) || '').trim()
-        if (proxyUsername) {
-          const user = resolveOrProvisionProxyUser(proxyUsername)
-          if (user) return { ...user, agent_name: agentName }
-        }
+    } else if (safeCompare(request.headers.get(PROXY_AUTH_SECRET_HEADER) || '', proxyAuthSecret)) {
+      const proxyUsername = (request.headers.get(proxyAuthHeader) || '').trim()
+      if (proxyUsername) {
+        const user = resolveOrProvisionProxyUser(proxyUsername)
+        if (user) return { ...user, agent_name: agentName }
       }
     }
   }

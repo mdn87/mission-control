@@ -22,7 +22,18 @@ function envFlag(name: string): boolean {
 }
 
 function normalizeHostname(raw: string): string {
-  return raw.trim().replace(/^\[|\]$/g, '').split(':')[0].replace(/\.$/, '').toLowerCase()
+  const value = raw.trim().toLowerCase()
+  if (!value) return ''
+
+  if (value.startsWith('[')) {
+    const closingBracket = value.indexOf(']')
+    if (closingBracket <= 1) return ''
+    return value.slice(1, closingBracket).replace(/\.$/, '')
+  }
+
+  const colonCount = (value.match(/:/g) || []).length
+  const hostname = colonCount === 1 ? value.slice(0, value.lastIndexOf(':')) : value
+  return hostname.replace(/\.$/, '')
 }
 
 function parseForwardedHost(forwarded: string | null): string[] {
@@ -167,8 +178,7 @@ export function proxy(request: NextRequest) {
     .filter(Boolean)
   const implicitAllowedHosts = getImplicitAllowedHosts()
 
-  const enforceAllowlist = !allowAnyHost && allowedPatterns.length > 0
-  const isAllowedHost = !enforceAllowlist
+  const isAllowedHost = allowAnyHost
     || requestHosts.length > 0 && requestHosts.every((hostName) =>
       implicitAllowedHosts.some((candidate) => hostMatches(candidate, hostName))
       || allowedPatterns.some((pattern) => hostMatches(pattern, hostName))
