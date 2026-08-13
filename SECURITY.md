@@ -129,13 +129,14 @@ replacement.
 **Deletion is still not complete.** Most mutation routes authenticate at the top
 of the handler and only then await the request body — 89 of them, though a few
 such as `POST /api/tokens/rotate` read no body at all — so a request begun before
-the deletion carries an authorization decision that deletion cannot cancel. Nine
+the deletion carries an authorization decision that deletion cannot cancel. Ten
 of those routes grant access or action that outlives it: a new approved admin, an
 approved access request, an agent API key, a webhook aimed at an attacker's URL,
 an OpenClaw cron job, a paired gateway device with its own token, a spawned
-gateway agent run, a host OS account, and the gateway bearer credential.
+gateway agent run, a persistent agent command allowlist, a host OS account, and
+the gateway bearer credential.
 
-**Five of those leave the application**, and nothing done inside Mission Control
+**Six of those leave the application**, and nothing done inside Mission Control
 undoes any of them. Wherever the platform's account-creation command is available
 to the process, `POST /api/super/os-users` creates a **host OS account**. On Linux
 that is passwordless sudo for `useradd`, and the requested password is applied by
@@ -152,7 +153,10 @@ revoke it at the gateway, since deleting the Mission Control user does not.
 `POST /api/spawn` submits an **agent run to the gateway** with an attacker-chosen
 task and a timeout of up to an hour; once the gateway has accepted it, restarting
 Mission Control does not cancel it, so find and cancel any runs spawned during
-the window.
+the window. `PUT /api/exec-approvals` writes **agent command allowlists** to
+OpenClaw's persistent `exec-approvals.json`, so wildcard patterns added during the
+window let agents run matching commands without approval indefinitely — neither
+deletion nor a restart reverts that file, and the route writes no audit event.
 
 **Cut the in-flight requests before rotating anything.** There is no per-user
 request registry and no drain check, so "wait for requests to finish" is not
@@ -170,15 +174,26 @@ Then, in this order:
   existing token unchanged and writes no audit event, so a disclosed credential
   leaves the gateway's state looking entirely normal. Inspection cannot tell you
   whether it leaked; assume it did if such a request may have been in flight.
-- **Rotate the global `API_KEY`** — after the deletion and restart, never before.
-  `POST /api/tokens/rotate` needs no request body and returns the new key in
-  plaintext, so any live admin session can rotate again and read the replacement.
+- **Rotate the global key with `POST /api/tokens/rotate`** — after the deletion
+  and restart, never before, since that endpoint needs no request body and
+  returns the new key in plaintext to any live admin session. Editing the
+  `API_KEY` environment variable is **not** a rotation on a deployment that has
+  ever rotated from the dashboard: `matchesGlobalApiKey` gives the
+  `settings.security.api_key_hash` row precedence and only falls back to the
+  environment when no such row exists, so the old database-backed key stays valid
+  behind a changed env var. To rotate by environment instead, delete that
+  settings row as part of the change.
+- **Cancel any agent runs spawned during the window**, at the gateway. The
+  restart does not reach them.
+- **Review OpenClaw's `exec-approvals.json`** and remove allowlist entries added
+  during the window.
 - **Do not rely on the audit log alone.** Webhook creation, agent API key
-  issuance, cron job creation, gateway connect, and device pairing write no audit
-  events. Inspect the `webhooks` and `agent_api_keys` tables, OpenClaw's
-  `cron/jobs.json`, and the gateway's paired-device list directly, alongside the
-  audit log for user creation and access-request approvals, and the host's
-  account list on super-admin deployments.
+  issuance, cron job creation, gateway connect, device pairing, and exec-approval
+  changes write no audit events. Inspect the `webhooks` and `agent_api_keys`
+  tables, OpenClaw's `cron/jobs.json` and `exec-approvals.json`, and the gateway's
+  paired-device list directly, alongside the audit log for user creation,
+  access-request approvals and agent spawns, and the host's account list on
+  super-admin deployments.
 
 Known gaps, which are why the above is a workaround rather than a procedure:
 

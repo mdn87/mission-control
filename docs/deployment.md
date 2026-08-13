@@ -440,8 +440,8 @@ configuration is part of the security boundary.
 > revoked admin can begin `POST /api/auth/users`, stall, wait out the deletion,
 > and then create a fresh approved admin.
 >
-> Nine mutation routes in that shape grant access outliving the revocation, and
-> **five of them leave the application**. Wherever the platform's account-creation
+> Ten mutation routes in that shape grant access outliving the revocation, and
+> **six of them leave the application**. Wherever the platform's account-creation
 > command is reachable — passwordless sudo for `useradd` on Linux, `sysadminctl
 > -addUser` on macOS, which unlike Linux does apply the requested password —
 > `POST /api/super/os-users` creates a host OS account. `POST /api/gateways/connect`
@@ -460,15 +460,22 @@ configuration is part of the security boundary.
 > step that deterministically ends an already-authorized handler.
 >
 > Then rotate the gateway credential (its state looks normal even after
-> disclosure, so inspection proves nothing) and the global `API_KEY` — the latter
-> only after the deletion and restart, since `tokens/rotate` needs no body and
-> returns the new key in plaintext to any surviving admin session.
+> disclosure, so inspection proves nothing) and the global key via
+> `POST /api/tokens/rotate` — only after the deletion and restart, since that
+> endpoint needs no body and returns the new key in plaintext to any surviving
+> admin session. Changing the `API_KEY` environment variable is not a rotation
+> where a `settings.security.api_key_hash` row exists; that row takes precedence
+> and the old key stays valid until it is removed.
+>
+> **Cancel any agent runs spawned during the window** at the gateway — the
+> restart does not reach them — and review OpenClaw's `exec-approvals.json`,
+> removing allowlist entries added during it.
 >
 > The audit log does not record webhook creation, agent key issuance, cron job
-> creation, gateway connect, or device pairing — inspect the `webhooks` and
-> `agent_api_keys` tables, OpenClaw's `cron/jobs.json`, and the gateway's paired
-> devices directly, alongside the audit log and the host's account list on
-> super-admin deployments.
+> creation, gateway connect, device pairing, or exec-approval changes — inspect
+> the `webhooks` and `agent_api_keys` tables, OpenClaw's `cron/jobs.json` and
+> `exec-approvals.json`, and the gateway's paired devices directly, alongside the
+> audit log and the host's account list on super-admin deployments.
 >
 > Closing this properly needs an atomic revocation operation and an authority
 > recheck after body parsing, not a documented ordering — see

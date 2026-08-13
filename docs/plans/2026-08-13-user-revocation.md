@@ -55,7 +55,7 @@ architectural: 89 mutation handlers under `src/app/api` match the shape
 call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
 `await request.json()`).
 
-Most merely let a revoked user complete one more write. **Nine grant access or
+Most merely let a revoked user complete one more write. **Ten grant access or
 action that survives account deletion**, which is what makes the shape a revocation problem
 rather than an ordinary race:
 
@@ -69,9 +69,10 @@ rather than an ordinary race:
 | `POST /api/webhooks` | A webhook with an attacker-chosen URL and generated secret (lines 75-79) — ongoing event exfiltration |
 | `POST /api/cron` (`add`) | An enabled OpenClaw cron job with an attacker-chosen schedule and agent-turn message (lines 371-413), written to `cron/jobs.json` |
 | `POST /api/nodes` | An approved gateway device pairing (auth line 97, body await 102, `device.pair.approve` 132-134); the paired device holds its own token |
+| `PUT /api/exec-approvals` | Agent command allowlist patterns written to OpenClaw's persistent `exec-approvals.json` (auth line 114, body await 120, write 130-172); no audit event |
 | `POST /api/spawn` | A gateway agent run with an attacker-chosen task (auth line 19, body await 28, `sessions_spawn` 86-103), timeout up to an hour; a Mission Control restart does not cancel it |
 
-**Five of these leave the application**, and none is undone by anything done
+**Six of these leave the application**, and none is undone by anything done
 inside Mission Control:
 
 - The host OS account, wherever the platform's account-creation command is
@@ -94,9 +95,11 @@ inside Mission Control:
   Deleting the Mission Control user does not revoke the pairing; it has to be
   revoked at the gateway.
 - The spawned gateway agent run, which the gateway executes on its own for up to
-  an hour. This is the one case a Mission Control restart cannot touch, which
-  makes the restart step in the current documentation necessary but not
-  sufficient.
+  an hour. A Mission Control restart cannot touch it, which makes the restart
+  step in the current documentation necessary but not sufficient.
+- The agent command allowlist in OpenClaw's `exec-approvals.json`. Wildcard
+  patterns added during the window let agents execute matching commands without
+  approval, indefinitely, and neither deletion nor a restart reverts the file.
 
 `PATCH /api/auth/me` mints a session, but **not through the deletion race**: the
 password path reloads `password_hash` from `users` (line ~71) and returns 403
@@ -105,7 +108,7 @@ problem 1 and not for the deletion workaround.
 
 ### What this list is not
 
-The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 across successive passes, every step of it
+The count went 2 → 5 → 9 → 6 → 7 → 8 → 9 → 10 across successive passes, every step of it
 prompted by review rather than by my own checking. The nine was wrong in both
 directions, and the errors are worth recording so the next reader calibrates
 against them rather than the number:
@@ -130,7 +133,7 @@ against them rather than the number:
 
 The scan keyed on `createUser`/`createSession`/`hashApiKey`/`randomBytes`/
 `INSERT INTO` and similar, so a route granting persistence by other means would
-not appear. Treat nine as the current floor, not a total.
+not appear. Treat ten as the current floor, not a total.
 
 ## Current workaround
 
@@ -203,12 +206,14 @@ belongs here too.
 
 ## Phase 4: audit coverage
 
-Five of the eight escalation routes write no audit record at all:
+Six of the ten escalation routes write no audit record at all:
 `POST /api/webhooks`, `POST /api/agents/[id]/keys`, `POST /api/cron`,
-`POST /api/gateways/connect`, and `POST /api/nodes` never call `logAuditEvent` or
-insert into `audit_log`. An operator investigating a revocation window can
+`POST /api/gateways/connect`, `POST /api/nodes`, and `PUT /api/exec-approvals`
+never call `logAuditEvent` or insert into `audit_log`. (`POST /api/spawn` does
+record an `agent_spawn` event.) An operator investigating a revocation window can
 therefore find nothing in the audit log while an attacker's webhook, agent key,
-cron job, paired device, or disclosed gateway credential remains active.
+cron job, paired device, allowlist entry, or disclosed gateway credential
+remains active.
 
 Device pairing matters most among the additions, because the resulting credential
 lives at the gateway rather than in Mission Control — unobservable here and
@@ -219,7 +224,7 @@ so there is no state difference to detect even in principle. Disclosure is
 unobservable after the fact, which makes rotation the only sound response and an
 audit event the only way to know it is needed.
 
-Add audit events for all five, and sweep the remaining credential-issuing routes
+Add audit events for all six, and sweep the remaining credential-issuing routes
 for the same gap — each of these was found by testing a documentation claim, not
 by a deliberate audit-coverage review.
 
