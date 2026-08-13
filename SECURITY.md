@@ -104,12 +104,21 @@ revoke their access here** — a Mission Control session that has not expired wi
 still authenticate them as their old account.
 
 Unapproving the account is not sufficient either: `validateSession` does not
-check approval, so a live session survives it. **To revoke access, end the
-user's Mission Control sessions and API keys**, then unapprove or remove the
-account so new ones cannot be created. Do not reach for
-`MC_PROXY_AUTH_DEFAULT_ROLE` here — it is consulted only for identities that do
-not exist yet, and enabling it creates approved accounts automatically, which
-widens access rather than restricting it. See
+check approval, so a live session survives it.
+
+**Revoke in this order — unapprove the account first, then destroy its sessions
+and API keys.** Unapproval blocks new credentials from being created (local
+login refuses an unapproved user, and the proxy path refuses to resolve to one)
+without touching credentials that already exist. Reversing the order leaves a
+window in which the user logs in again and mints a session that then survives
+the unapproval.
+
+Two traps here. **Deleting the account is not stronger than unapproving it** —
+with `MC_PROXY_AUTH_DEFAULT_ROLE` set, the next attested request finds no row
+and auto-provisions a fresh approved account with that role, so deletion
+re-grants access. And `MC_PROXY_AUTH_DEFAULT_ROLE` is never a revocation
+measure: it is consulted only for identities that do not exist yet, and enabling
+it creates approved accounts automatically. See
 [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication).
 
 Because that secret is the whole of the authentication, two deployment

@@ -412,20 +412,27 @@ configuration is part of the security boundary.
 > changed can still be authenticated as their *old* account by a cookie that has
 > not expired.
 >
-> **Removing access upstream does not remove it here.** Two things that look
-> like remedies are not:
+> **Removing access upstream does not remove it here, and the order matters.**
+> Revoke in this sequence:
 >
-> - *Unapproving the account* stops the proxy path resolving to it, but
->   `validateSession` does not check approval, so an existing session keeps
->   working until it expires.
-> - *Setting `MC_PROXY_AUTH_DEFAULT_ROLE`* does not help at all. An existing
->   unapproved user is refused before that setting is consulted, and for an
->   *unknown* identity it creates a new approved account — expanding access
->   rather than restricting it.
+> 1. **Unapprove the account first.** This blocks both ways a *new* credential
+>    could be created: local login refuses an unapproved user, and the proxy path
+>    refuses to resolve to one. It does not touch credentials that already exist.
+> 2. **Then destroy their sessions and API keys.** `validateSession` does not
+>    check approval, so an existing session keeps working until it is deleted or
+>    expires.
 >
-> To actually revoke someone, **end their Mission Control sessions** (and any API
-> keys they hold); unapprove or remove the account as well so new ones cannot be
-> created.
+> Doing it in the other order leaves a window: after the sessions are deleted but
+> before the account is unapproved, the user can log in again and mint a fresh
+> session — which then survives the unapproval, because approval is not checked
+> on validation.
+>
+> **Do not delete the account** while `MC_PROXY_AUTH_DEFAULT_ROLE` is set and the
+> gateway may still assert that identity. Deletion does not deny the next
+> request; it makes it *unknown*, and an unknown identity is auto-provisioned as
+> a new approved account with the configured role. Keep the account present and
+> unapproved, or unset `MC_PROXY_AUTH_DEFAULT_ROLE` and confirm the gateway has
+> stopped asserting the identity before removing it.
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and

@@ -351,5 +351,28 @@ describe('trusted proxy header authentication', () => {
 
       expect(validateSession('sometoken')?.username).toBe('revoked-user')
     })
+    it('login refuses an unapproved user, which is why unapproval must come first', async () => {
+      // The revocation order in SECURITY.md depends on this asymmetry:
+      // authenticateUser gates on is_approved, validateSession does not. So
+      // unapproving blocks new credentials while leaving existing ones alive,
+      // and the sessions must be destroyed after it rather than before.
+      const row = {
+        id: 9, username: 'revoked-user', display_name: 'X', role: 'admin' as const,
+        provider: 'local', email: null, avatar_url: null,
+        is_approved: 0, workspace_id: 1, tenant_id: 1,
+        created_at: 1, updated_at: 1, last_login_at: null,
+        password_hash: 'hashed:pw',
+      }
+      const { authenticateUser } = await loadAuth({
+        database: {
+          prepare: vi.fn((sql: string) => ({
+            get: vi.fn(() => (sql.includes('FROM workspaces') ? { id: 1, tenant_id: 1 } : row)),
+            run: vi.fn(),
+          })),
+        },
+      })
+
+      expect(authenticateUser('revoked-user', 'pw')).toBeNull()
+    })
   })
 })
