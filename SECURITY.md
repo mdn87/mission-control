@@ -123,11 +123,19 @@ that role, re-granting the access you just removed. If the user knew the global
 **Deletion is still not complete.** Every mutation route authenticates at the
 top of the handler and only then awaits the request body, so a request begun
 before the deletion carries an authorization decision that deletion cannot
-cancel. At least five such routes grant access that outlives the revocation: a
-new approved admin, a new session, an approved access request, an agent API key,
-or the rotated global `API_KEY`. Treat revocation as effective only once
-in-flight requests have drained, and check the audit log around it for user
-creation, access-request approvals, and key issuance — not user creation alone.
+cancel. At least nine such routes grant access that outlives the revocation —
+a new approved admin, a new session, an approved access request, an agent API
+key, the rotated global `API_KEY`, a webhook pointed at an attacker's URL, a
+regenerated gateway token, or users moved between workspaces.
+
+One escapes the application altogether: on a deployment where the Mission
+Control process has passwordless sudo for `useradd`, `POST /api/super/os-users`
+creates a **host OS account** with a password from the request body. Nothing
+done inside Mission Control revokes that.
+
+Treat revocation as effective only once in-flight requests have drained. Check
+the audit log around it for user creation, access-request approvals, key and
+webhook issuance, and — on super-admin deployments — the host's account list.
 
 Known gaps, which are why the above is a workaround rather than a procedure:
 

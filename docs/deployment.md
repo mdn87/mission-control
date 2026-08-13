@@ -437,13 +437,18 @@ configuration is part of the security boundary.
 > before awaiting its body, so a revoked admin can begin `POST /api/auth/users`,
 > stall, wait out the deletion, and then create a fresh approved admin.
 >
-> At least five mutation routes in that shape grant access outliving the
-> revocation — a new approved admin, a new session, an approved access request,
-> an agent API key, or the rotated global `API_KEY`.
+> At least nine mutation routes in that shape grant access outliving the
+> revocation, and one leaves the application entirely: where the Mission Control
+> process has passwordless sudo for `useradd`, `POST /api/super/os-users` creates
+> a host OS account with a password from the request body. The rest mint a new
+> approved admin, a session, an approved access request, an agent API key, the
+> rotated global `API_KEY`, a webhook aimed at a chosen URL, or a regenerated
+> gateway token.
 >
 > Revocation is therefore effective only once in-flight requests have drained,
 > and the audit log is worth checking around it for user creation, access-request
-> approvals, and key issuance. Closing this properly needs an atomic revocation
+> approvals, key and webhook issuance — and the host's account list on
+> super-admin deployments. Closing this properly needs an atomic revocation
 > operation and an authority recheck after body parsing, not a documented
 > ordering — see
 > [docs/plans/2026-08-13-user-revocation.md](plans/2026-08-13-user-revocation.md).

@@ -49,21 +49,33 @@ architectural: 89 mutation handlers under `src/app/api` match the shape
 call `getUserFromRequest` or `requireRole` and also `await validateBody(...)` or
 `await request.json()`).
 
-Most merely let a revoked user complete one more write. **At least five grant
+Most merely let a revoked user complete one more write. **At least nine grant
 persistent access**, which is what makes the shape a revocation problem rather
 than an ordinary race:
 
 | Route | What survives the revocation |
 | --- | --- |
+| `POST /api/super/os-users` | **A host OS account** — `sudo -n /usr/sbin/useradd` at line 366, with a password from the request body (line 274) |
 | `POST /api/auth/users` | A new approved admin (`createUser` defaults `is_approved` to 1) |
 | `PATCH /api/auth/me` | A new session, minted after the operator's deletion |
 | `POST /api/auth/access-requests` | An account approved with a chosen role (`is_approved = 1`, line 108/115) |
 | `POST /api/agents/[id]/keys` | An agent API key (`mca_…`, line 153) |
 | `POST /api/tokens/rotate` | The rotated global `API_KEY`, now known to the revoked admin (line 83) |
+| `POST /api/webhooks` | A webhook with an attacker-chosen URL and a generated secret (line 75-79) — ongoing event exfiltration |
+| `POST /api/security-scan/fix` | Regenerated keys and a gateway auth token (lines 205, 252) |
+| `PUT /api/workspaces/[id]` | Users reassigned across workspaces (line 151), which is the boundary the admin routes scope against |
 
-These were found by inspecting the routes that obviously touch credentials and
-identity. **The set has not been enumerated exhaustively** — the remaining ~84
-have not been reviewed, and the count above is a floor, not a total.
+The first is the one that matters most: it escapes the application entirely, so
+no amount of Mission Control revocation touches it. It requires the deployment
+to have granted the MC process passwordless sudo for `useradd` (the route's own
+error hint at line 372 says so), which is the "super admin" configuration rather
+than every install.
+
+These were found by scanning the in-flight set for credential, identity, and
+permission writes. **The set is a floor, not a total** — the scan keyed on
+`createUser`/`createSession`/`hashApiKey`/`randomBytes`/`INSERT INTO` and similar,
+so a route that grants persistent access by some other means would not appear.
+The first pass of this plan said "two", and looking properly found nine.
 
 ## Current workaround
 
