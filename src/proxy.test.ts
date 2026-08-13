@@ -5,6 +5,50 @@ function setNodeEnv(value: string) {
 }
 
 describe('proxy host matching', () => {
+  it('fails closed to implicit hosts when MC_ALLOWED_HOSTS is unset in production', async () => {
+    vi.resetModules()
+    vi.doMock('node:os', () => ({
+      default: { hostname: () => 'hetzner-jarv' },
+      hostname: () => 'hetzner-jarv',
+    }))
+
+    const { proxy } = await import('./proxy')
+    const request = {
+      headers: new Headers({ host: 'evil.example.com' }),
+      nextUrl: { host: 'evil.example.com', hostname: 'evil.example.com', pathname: '/login', clone: () => ({ pathname: '/login' }) },
+      method: 'GET',
+      cookies: { get: () => undefined },
+    } as any
+
+    setNodeEnv('production')
+    delete process.env.MC_ALLOWED_HOSTS
+    delete process.env.MC_ALLOW_ANY_HOST
+
+    expect(proxy(request).status).toBe(403)
+  })
+
+  it('keeps IPv6 loopback available under the implicit production allowlist', async () => {
+    vi.resetModules()
+    vi.doMock('node:os', () => ({
+      default: { hostname: () => 'hetzner-jarv' },
+      hostname: () => 'hetzner-jarv',
+    }))
+
+    const { proxy } = await import('./proxy')
+    const request = {
+      headers: new Headers({ host: '[::1]:3000' }),
+      nextUrl: { host: '[::1]:3000', hostname: '::1', pathname: '/login', clone: () => ({ pathname: '/login' }) },
+      method: 'GET',
+      cookies: { get: () => undefined },
+    } as any
+
+    setNodeEnv('production')
+    delete process.env.MC_ALLOWED_HOSTS
+    delete process.env.MC_ALLOW_ANY_HOST
+
+    expect(proxy(request).status).not.toBe(403)
+  })
+
   it('allows the system hostname implicitly', async () => {
     vi.resetModules()
     vi.doMock('node:os', () => ({
