@@ -40,6 +40,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Must resolve values the same way scripts/load-env.sh does, or the audit will
+# grade a different string than the one the server actually starts with: quoted
+# values are taken verbatim, unquoted ones have a whitespace-preceded inline
+# comment stripped.
 trim_env_value() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -47,9 +51,13 @@ trim_env_value() {
   if [[ ${#value} -ge 2 ]]; then
     if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]] ||
        [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
-      value="${value:1:${#value}-2}"
+      printf '%s' "${value:1:${#value}-2}"
+      return
     fi
   fi
+  value="$(printf '%s' "$value" | sed 's/[[:space:]]#.*$//')"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
   printf '%s' "$value"
 }
 
@@ -163,9 +171,18 @@ else
   if [[ -n "$PROXY_TRUSTED" ]]; then
     warn "MC_PROXY_AUTH_TRUSTED_IPS is set but no longer used; the app cannot identify the proxy hop from headers (see SECURITY.md)"
   fi
-  if [[ -n "$PROXY_DEFAULT_ROLE" ]]; then
-    warn "MC_PROXY_AUTH_DEFAULT_ROLE=$PROXY_DEFAULT_ROLE auto-provisions accounts for unknown proxy identities"
-  fi
+  # resolveOrProvisionProxyUser accepts only these three and otherwise refuses to
+  # provision, so a typo here silently means "no auto-provisioning" rather than
+  # what the setting appears to say.
+  case "$PROXY_DEFAULT_ROLE" in
+    "") ;;
+    viewer|operator|admin)
+      warn "MC_PROXY_AUTH_DEFAULT_ROLE=$PROXY_DEFAULT_ROLE auto-provisions accounts for unknown proxy identities"
+      ;;
+    *)
+      fail "MC_PROXY_AUTH_DEFAULT_ROLE=$PROXY_DEFAULT_ROLE is not one of viewer, operator, admin (unknown identities will be refused, not provisioned)"
+      ;;
+  esac
   # Neither can be checked from here — one lives in the reverse proxy config and
   # the other in the network layer — but the secret is the only credential, so
   # these two controls are what the scheme actually rests on. Always say them.

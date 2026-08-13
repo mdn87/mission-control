@@ -390,16 +390,28 @@ user (Envoy OIDC `claimToHeaders`, an oauth2-proxy, Tailscale Serve) pass that
 identity through. Because the identity arrives as an HTTP header, the gateway
 configuration is part of the security boundary.
 
-> **Known limitation — this does not replace the login form today.**
+> **Known limitation — this does not replace the login form today, and the
+> `/api/*` gate is weaker than it looks.**
+>
 > Proxy identity is resolved in route-level auth (`getUserFromRequest`), but the
 > Next.js middleware in `src/proxy.ts` runs first and admits a request only on a
-> session cookie or an API key. An attested request with neither is answered
-> `401` on `/api/*` and redirected to `/login` on page routes, before proxy auth
-> is ever consulted, and `/login` does not exchange a proxy identity for a
-> session. In practice proxy auth currently only helps callers that already
-> carry an API key; browser users still sign in normally. Closing this needs
-> either the middleware to recognise attested requests or a session-bootstrap
-> route, and neither is in place yet.
+> session cookie or an API key. For **page routes** that is a hard gate: an
+> attested request without a cookie is redirected to `/login` before proxy auth
+> is consulted, and `/login` does not exchange a proxy identity for a session,
+> so browser users still sign in normally.
+>
+> For **`/api/*` routes it is not a gate at all.** The middleware cannot query
+> the database from the edge runtime, so it only shape-checks dashboard-issued
+> keys — any string matching `mc_`/`mca_` plus 48 hex characters is admitted and
+> left for route auth to validate. `getUserFromRequest` then checks the proxy
+> secret and returns the proxy user *before* that key is ever validated. A
+> caller holding the proxy secret can therefore fabricate a syntactically valid
+> key and reach every API route as any identity they name. When assessing a
+> leaked secret or a directly reachable backend, assume the whole API surface is
+> exposed; do not treat "needs an API key" as a second factor.
+>
+> Closing this needs either the middleware to recognise attested requests or a
+> session-bootstrap route, and neither is in place yet.
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and

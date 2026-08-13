@@ -169,6 +169,32 @@ describe('trusted proxy header authentication', () => {
     )
   })
 
+  it('does not let mismatched-secret noise suppress the post-attestation signal', async () => {
+    // A client with no secret can spray a public route. If that shared one reason
+    // consumed a single global window, the event that indicates someone actually
+    // holds the secret would be silently dropped.
+    const { requireRole, logSecurityEvent } = await loadAuth({ database: makeEmptyDatabase() })
+    const noise = new Request('http://localhost/api/auth/users', {
+      headers: { 'x-mc-proxy-secret': 'wrong', 'x-user-email': 'admin' },
+    })
+    for (let i = 0; i < 5; i++) requireRole(noise, 'admin')
+
+    requireRole(
+      new Request('http://localhost/api/auth/users', {
+        headers: {
+          'x-mc-proxy-secret': '0123456789abcdef0123456789abcdef',
+          'x-user-email': 'nobody',
+        },
+      }),
+      'admin',
+    )
+
+    const reasons = rejectionReasons(logSecurityEvent)
+    expect(reasons).toContain('attested identity did not resolve to an approved user')
+    // The noise itself is still collapsed to one event.
+    expect(reasons.filter((r) => r === 'proxy attestation secret mismatch')).toHaveLength(1)
+  })
+
   it('fails closed when the secret is still the public .env.example placeholder', async () => {
     // 42 characters, so it clears the length rule while being published in the repo.
     const placeholder = 'replace-with-at-least-32-random-characters'

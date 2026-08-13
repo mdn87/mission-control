@@ -33,12 +33,19 @@ function warnProxyAuthMisconfigOnce(reason: string): void {
 
 // Someone presenting proxy auth headers that do not verify is worth seeing, but
 // a probe loop must not be able to drive one DB insert per request.
+//
+// The window is per reason, not global. A client that cannot be authenticated at
+// all can spray mismatched secrets at a public route; with one shared window
+// that traffic would consume every slot and suppress the post-attestation
+// reasons, which are the ones that indicate someone actually holds the secret.
+// Reasons are string literals from this module, so the map stays bounded.
 const PROXY_AUTH_REJECTION_LOG_INTERVAL_MS = 60_000
-let _proxyAuthRejectionLoggedAt = 0
+const _proxyAuthRejectionLoggedAt = new Map<string, number>()
 function logProxyAuthRejection(reason: string): void {
   const now = Date.now()
-  if (now - _proxyAuthRejectionLoggedAt < PROXY_AUTH_REJECTION_LOG_INTERVAL_MS) return
-  _proxyAuthRejectionLoggedAt = now
+  const lastLoggedAt = _proxyAuthRejectionLoggedAt.get(reason) ?? 0
+  if (lastLoggedAt && now - lastLoggedAt < PROXY_AUTH_REJECTION_LOG_INTERVAL_MS) return
+  _proxyAuthRejectionLoggedAt.set(reason, now)
   try {
     logSecurityEvent({
       event_type: 'proxy_auth_rejected',

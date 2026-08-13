@@ -98,6 +98,48 @@ echo 'MC_PROXY_AUTH_TRUSTED_IPS=127.0.0.1' >> "$PROXY_ENV"
 retired_output="$(bash "$AUDIT" --env-file "$PROXY_ENV")"
 grep -Fq '[WARN] MC_PROXY_AUTH_TRUSTED_IPS is set but no longer used' <<< "$retired_output"
 
+# An unquoted inline comment must be stripped the way scripts/load-env.sh strips
+# it, or the audit grades a different string than the server actually starts with.
+COMMENT_ENV="$TMP_DIR/inline-comment.env"
+cat > "$COMMENT_ENV" <<'EOF'
+AUTH_PASS="a secure # password"
+API_KEY=test-api-key
+MC_ALLOWED_HOSTS=127.0.0.1,localhost
+MC_COOKIE_SECURE=1
+MC_COOKIE_SAMESITE=strict
+MC_ENABLE_HSTS=1
+MC_DISABLE_RATE_LIMIT=0
+MC_PROXY_AUTH_HEADER=X-User-Email
+MC_PROXY_AUTH_SECRET=short # replace this before production
+EOF
+chmod 600 "$COMMENT_ENV"
+comment_output="$(bash "$AUDIT" --env-file "$COMMENT_ENV" || true)"
+grep -Fq '[FAIL] MC_PROXY_AUTH_HEADER is set but MC_PROXY_AUTH_SECRET is missing or under 32 characters' <<< "$comment_output"
+# A quoted value keeps its '#'; only unquoted values have comments stripped.
+grep -Fq '[PASS] AUTH_PASS is set to a non-default value (19 chars)' <<< "$comment_output"
+if bash "$AUDIT" --env-file "$COMMENT_ENV" --strict >/dev/null 2>&1; then
+  echo 'Expected --strict to fail when an inline comment hides a short secret' >&2
+  exit 1
+fi
+
+# A default role the runtime does not accept means no provisioning at all.
+ROLE_ENV="$TMP_DIR/bad-role.env"
+sed 's/^MC_PROXY_AUTH_SECRET=.*/MC_PROXY_AUTH_SECRET=0123456789abcdef0123456789abcdef/' \
+  "$COMMENT_ENV" > "$ROLE_ENV"
+echo 'MC_PROXY_AUTH_DEFAULT_ROLE=administrator' >> "$ROLE_ENV"
+chmod 600 "$ROLE_ENV"
+role_output="$(bash "$AUDIT" --env-file "$ROLE_ENV" || true)"
+grep -Fq '[FAIL] MC_PROXY_AUTH_DEFAULT_ROLE=administrator is not one of viewer, operator, admin' <<< "$role_output"
+if bash "$AUDIT" --env-file "$ROLE_ENV" --strict >/dev/null 2>&1; then
+  echo 'Expected --strict to fail on an unsupported MC_PROXY_AUTH_DEFAULT_ROLE' >&2
+  exit 1
+fi
+
+sed -i.bak '/^MC_PROXY_AUTH_DEFAULT_ROLE=/d' "$ROLE_ENV" && rm -f "$ROLE_ENV.bak"
+echo 'MC_PROXY_AUTH_DEFAULT_ROLE=viewer' >> "$ROLE_ENV"
+good_role_output="$(bash "$AUDIT" --env-file "$ROLE_ENV" || true)"
+grep -Fq '[WARN] MC_PROXY_AUTH_DEFAULT_ROLE=viewer auto-provisions' <<< "$good_role_output"
+
 # MC_ALLOWED_HOSTS omitted is now a finding, since host checking fails closed.
 NO_HOSTS_ENV="$TMP_DIR/no-hosts.env"
 cat > "$NO_HOSTS_ENV" <<'EOF'

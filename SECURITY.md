@@ -87,9 +87,14 @@ placeholder secret disables proxy auth entirely and records a
 present proxy headers which fail any later check are recorded as
 `proxy_auth_rejected`.
 
-Note that proxy auth does not currently replace the login form: the edge
-middleware admits requests only on a session cookie or API key, so attested
-browser requests are redirected to `/login` before proxy auth is consulted. See
+Two limitations to account for when assessing this. Proxy auth does not
+currently replace the login form for **page routes**: the edge middleware admits
+requests only on a session cookie or API key, so attested browser requests are
+redirected to `/login` before proxy auth is consulted. For **`/api/*` routes**
+the middleware only shape-checks API keys — it cannot reach the database from
+the edge — and proxy auth resolves before any key is validated, so anyone
+holding the proxy secret can fabricate a syntactically valid key and reach the
+entire API surface. Treat a leaked secret as full API compromise. See
 [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication).
 
 Because that secret is the whole of the authentication, two deployment
