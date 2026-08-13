@@ -390,28 +390,20 @@ user (Envoy OIDC `claimToHeaders`, an oauth2-proxy, Tailscale Serve) pass that
 identity through. Because the identity arrives as an HTTP header, the gateway
 configuration is part of the security boundary.
 
-> **Known limitation — this does not replace the login form today, and the
-> `/api/*` gate is weaker than it looks.**
+> **A leaked secret exposes the entire application, not part of it.**
 >
-> Proxy identity is resolved in route-level auth (`getUserFromRequest`), but the
-> Next.js middleware in `src/proxy.ts` runs first and admits a request only on a
-> session cookie or an API key. For **page routes** that is a hard gate: an
-> attested request without a cookie is redirected to `/login` before proxy auth
-> is consulted, and `/login` does not exchange a proxy identity for a session,
-> so browser users still sign in normally.
+> The middleware admits a request carrying a valid `X-MC-Proxy-Secret` so it can
+> reach route auth, which is the only layer able to resolve the identity header
+> against the database. Both page routes and `/api/*` are covered, so an
+> attested user reaches the dashboard without seeing the login form.
 >
-> For **`/api/*` routes it is not a gate at all.** The middleware cannot query
-> the database from the edge runtime, so it only shape-checks dashboard-issued
-> keys — any string matching `mc_`/`mca_` plus 48 hex characters is admitted and
-> left for route auth to validate. `getUserFromRequest` then checks the proxy
-> secret and returns the proxy user *before* that key is ever validated. A
-> caller holding the proxy secret can therefore fabricate a syntactically valid
-> key and reach every API route as any identity they name. When assessing a
-> leaked secret or a directly reachable backend, assume the whole API surface is
-> exposed; do not treat "needs an API key" as a second factor.
->
-> Closing this needs either the middleware to recognise attested requests or a
-> session-bootstrap route, and neither is in place yet.
+> That admission is not authentication — route auth still requires the identity
+> header to resolve to an approved user — but it does mean the secret alone
+> determines whether a request is considered to come from the gateway. There is
+> no second factor: the `/api/*` middleware check cannot query the database from
+> the edge runtime, so it only shape-checks dashboard-issued keys, and never
+> treated a key as proof of anything. When assessing a leaked secret or a
+> directly reachable backend, assume the whole surface is exposed.
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and
