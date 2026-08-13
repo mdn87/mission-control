@@ -397,13 +397,23 @@ configuration is part of the security boundary.
 > against the database. Both page routes and `/api/*` are covered, so an
 > attested user reaches the dashboard without seeing the login form.
 >
-> That admission is not authentication — route auth still requires the identity
-> header to resolve to an approved user — but it does mean the secret alone
+> That admission is not authentication — route auth resolves the identity header
+> against the database and returns that user — but it does mean the secret alone
 > determines whether a request is considered to come from the gateway. There is
 > no second factor: the `/api/*` middleware check cannot query the database from
 > the edge runtime, so it only shape-checks dashboard-issued keys, and never
 > treated a key as proof of anything. When assessing a leaked secret or a
 > directly reachable backend, assume the whole surface is exposed.
+>
+> **The gateway's identity does not always win.** If the header names someone
+> unknown or unapproved — a renamed account, or a new one with
+> `MC_PROXY_AUTH_DEFAULT_ROLE` unset — route auth does not stop there. It falls
+> through to the session cookie and API key, so a user whose upstream identity
+> changed can still be authenticated as their *old* account by a cookie that has
+> not expired. Revoking access upstream therefore does not by itself revoke
+> access here; end the Mission Control session too, or keep
+> `MC_PROXY_AUTH_DEFAULT_ROLE` set so identities resolve rather than falling
+> through.
 
 Mission Control checks exactly one credential: `MC_PROXY_AUTH_SECRET`, at least
 32 random characters, injected by the gateway as `X-MC-Proxy-Secret` and

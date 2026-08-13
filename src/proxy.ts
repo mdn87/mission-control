@@ -233,9 +233,16 @@ export function proxy(request: NextRequest) {
   // does not work at all: attested requests were answered 401 on /api/* and
   // redirected to /login on page routes, before proxy auth was ever consulted.
   //
-  // This admits, it does not authenticate. Route auth still requires the
-  // identity header to resolve to an approved user, so an attested request
-  // naming nobody gets no further than it did before.
+  // This admits, it does not authenticate. Route auth resolves the identity
+  // header against the database and returns that user when it can.
+  //
+  // When it cannot — the header is absent, or names someone unknown or
+  // unapproved — route auth does not stop there: it falls through to the session
+  // cookie and API key. So an attested request naming nobody is refused only if
+  // it carries no other credential; one that also has a valid cookie
+  // authenticates as that cookie's owner. Admission here does not narrow that,
+  // but it is a hybrid rather than "the gateway decides"; see the precedence
+  // note in lib/auth.ts.
   const proxyAttested = hasValidProxyAttestation(request.headers)
 
   // API routes: accept session cookie OR API key

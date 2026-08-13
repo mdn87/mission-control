@@ -95,7 +95,13 @@ attested user reaches the dashboard without the login form.
 There is no second factor behind that secret — the middleware cannot query the
 database from the edge runtime, so its API-key check is a shape check only.
 **Treat a leaked proxy secret as full compromise of the application**, not of
-part of it. See
+part of it.
+
+The gateway's identity also does not always win. When the header names someone
+unknown or unapproved, route auth falls through to the session cookie and API
+key rather than refusing, so **revoking a user upstream does not by itself
+revoke their access here** — a Mission Control session that has not expired will
+still authenticate them as their old account. End the session too. See
 [docs/deployment.md](docs/deployment.md#trusted-reverse-proxy-authentication).
 
 Because that secret is the whole of the authentication, two deployment
