@@ -51,6 +51,7 @@ const navGroups: NavGroup[] = [
       { id: 'office', label: 'Office', icon: <OfficeIcon />, priority: false },
       { id: 'monitor', label: 'Monitor', icon: <MonitorIcon />, priority: false },
       { id: 'lineage', label: 'Lineage', icon: <LineageIcon />, priority: false },
+      { id: 'snapshots', label: 'Snapshots', icon: <LineageIcon />, priority: false },
     ],
   },
   {
