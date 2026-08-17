@@ -102,6 +102,9 @@ export const config = {
   // Stubbed lineage index: "lineage:stateDir[:label]" entries, comma separated.
   // TORC has no enumerate-lineages contract yet, so this list is operator-supplied.
   torcLineages: (process.env.LUGOS_TORC_LINEAGES || '').trim(),
+  // Read-only accepted Project Snapshot view. Empty artifactStore means OFF.
+  torcBin: process.env.LUGOS_TORC_BIN || 'torc',
+  torcArtifactStore: process.env.LUGOS_TORC_ARTIFACT_STORE || '',
   gatewayHost: process.env.OPENCLAW_GATEWAY_HOST || '127.0.0.1',
   gatewayPort: clampInt(Number(process.env.OPENCLAW_GATEWAY_PORT || '18789'), 1, 65535, 18789),
   logsDir:

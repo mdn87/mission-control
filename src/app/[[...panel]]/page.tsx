@@ -40,6 +40,7 @@ import { ChatPagePanel } from '@/components/panels/chat-page-panel'
 import { ChatPanel } from '@/components/chat/chat-panel'
 import { LugosSpatialOverview } from '@/integrations/lugos/lugos-spatial-overview'
 import { TorcLineageTab } from '@/integrations/lugos/torc-lineage-tab'
+import { ProjectSnapshotPanel } from '@/integrations/lugos/project-snapshot-panel'
 import { isLugosOperatorMode } from '@/integrations/lugos/operator-mode'
 import { STORAGE_GATEWAY_URL } from '@/lib/device-identity'
 import { getPluginPanel } from '@/lib/plugins'
@@ -625,6 +626,8 @@ function ContentRouter({ tab }: { tab: string }) {
       return <SystemMonitorPanel />
     case 'lineage':
       return <TorcLineageTab />
+    case 'snapshots':
+      return <ProjectSnapshotPanel />
     case 'skills':
       return <SkillsPanel />
     case 'channels':
