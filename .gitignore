@@ -54,3 +54,9 @@ docs/_*.png
 # Local Codex session continuity
 .Codex/handoff.md
 .Codex/handoff-history/
+
+# Agent tooling scratch. This is a fork of builderz-labs/mission-control and
+# .claude/ is entirely local agent state here, so both entries are ignored
+# rather than carried as divergence from upstream.
+.claude/worktrees/
+.claude/launch.json
