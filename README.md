@@ -32,7 +32,7 @@ the authority boundary, local preview, and verification commands.
 Node.js 22 or newer and pnpm are required for a source install.
 
 ```bash
-git clone https://github.com/builderz-labs/mission-control.git
+git clone https://github.com/mdn87/mission-control.git
 cd mission-control
 bash install.sh --local
 ```
