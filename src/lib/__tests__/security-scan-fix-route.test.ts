@@ -161,7 +161,12 @@ describe('security-scan fix route env mutation', () => {
     const response = await POST(request(JSON.stringify({ ids: ['world_writable'] })))
 
     expect(response.status).toBe(200)
-    expect(statSync(filePath).mode & 0o777).toBe(0o664)
+    // Windows accepts chmodSync but does not expose POSIX mode bits through
+    // stat(). Keep the permission regression assertion on platforms where the
+    // filesystem actually implements it.
+    if (process.platform !== 'win32') {
+      expect(statSync(filePath).mode & 0o777).toBe(0o664)
+    }
   })
 
   it('reports a busy OpenClaw config without overwriting it', async () => {

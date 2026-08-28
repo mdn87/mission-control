@@ -1,18 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { resolveWithin } from '../paths'
 import path from 'node:path'
+import os from 'node:os'
 
 describe('resolveWithin', () => {
-  const base = '/tmp/sandbox'
+  const base = path.join(os.tmpdir(), 'mission-control-sandbox')
 
   it('resolves a simple relative path within base', () => {
     const result = resolveWithin(base, 'file.txt')
-    expect(result).toBe('/tmp/sandbox/file.txt')
+    expect(result).toBe(path.join(base, 'file.txt'))
   })
 
   it('resolves nested relative path', () => {
     const result = resolveWithin(base, 'subdir/file.txt')
-    expect(result).toBe('/tmp/sandbox/subdir/file.txt')
+    expect(result).toBe(path.join(base, 'subdir', 'file.txt'))
   })
 
   it('throws when path escapes base with ..', () => {
@@ -24,17 +25,17 @@ describe('resolveWithin', () => {
   })
 
   it('throws for absolute path outside base', () => {
-    expect(() => resolveWithin(base, '/etc/passwd')).toThrow('Path escapes base directory')
+    expect(() => resolveWithin(base, path.join(path.parse(base).root, 'etc', 'passwd'))).toThrow('Path escapes base directory')
   })
 
   it('allows an absolute path within the base', () => {
-    const result = resolveWithin(base, '/tmp/sandbox/file.txt')
-    expect(result).toBe('/tmp/sandbox/file.txt')
+    const result = resolveWithin(base, path.join(base, 'file.txt'))
+    expect(result).toBe(path.join(base, 'file.txt'))
   })
 
   it('handles double slashes and normalizes', () => {
     const result = resolveWithin(base, 'subdir//file.txt')
-    expect(result).toBe('/tmp/sandbox/subdir/file.txt')
+    expect(result).toBe(path.join(base, 'subdir', 'file.txt'))
   })
 
   it('does not allow sibling directory access', () => {
@@ -42,7 +43,7 @@ describe('resolveWithin', () => {
   })
 
   it('handles base dir with trailing slash', () => {
-    const result = resolveWithin('/tmp/sandbox/', 'file.txt')
-    expect(result).toBe('/tmp/sandbox/file.txt')
+    const result = resolveWithin(`${base}${path.sep}`, 'file.txt')
+    expect(result).toBe(path.join(base, 'file.txt'))
   })
 })

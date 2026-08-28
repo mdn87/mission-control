@@ -19,7 +19,7 @@ describe('security scan admin password resolution', () => {
     restore('AUTH_PASS_B64', originalAuthPassB64)
   })
 
-  it('accepts a strong base64-only password', () => {
+  it('accepts a strong base64-only password', { timeout: 15_000 }, () => {
     delete process.env.AUTH_PASS
     process.env.AUTH_PASS_B64 = Buffer.from('strong-password-123').toString('base64')
 

@@ -205,7 +205,9 @@ const baseEnv = {
   OPENCLAW_GATEWAY_HOST: gatewayHost,
   OPENCLAW_GATEWAY_PORT: gatewayPort,
   OPENCLAW_BIN: path.join(mockBinDir, 'openclaw'),
-  OPENCODE_BIN: path.join(mockBinDir, 'opencode'),
+  // Use a Node entrypoint so the E2E fixture runs on Windows as well as POSIX.
+  // The historical extensionless shell mock is not spawnable by Windows.
+  OPENCODE_BIN: path.join(mockBinDir, 'opencode.mjs'),
   CLAWDBOT_BIN: path.join(mockBinDir, 'clawdbot'),
   MC_SKILLS_USER_AGENTS_DIR: path.join(skillsRoot, 'user-agents'),
   MC_SKILLS_USER_CODEX_DIR: path.join(skillsRoot, 'user-codex'),

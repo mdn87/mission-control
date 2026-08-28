@@ -3,8 +3,10 @@ import fc from 'fast-check'
 import { canonicalizeMemoryRelativePath } from '@/lib/memory-path'
 import { resolveWithin } from '@/lib/paths'
 import { setNestedConfigValue } from '@/lib/config-path'
+import os from 'node:os'
+import path from 'node:path'
 
-const SAFE_BASE = '/srv/mission-control/memory'
+const SAFE_BASE = path.join(os.tmpdir(), 'mission-control', 'memory')
 const safeSegment = fc
   .stringMatching(/^[A-Za-z0-9_-]{1,20}$/)
   .filter((value) => !['__proto__', 'prototype', 'constructor'].includes(value))
@@ -26,7 +28,7 @@ describe('property-based security boundaries', () => {
         expect(canonical.split('/')).not.toContain('..')
 
         const resolved = resolveWithin(SAFE_BASE, canonical)
-        expect(resolved.startsWith(`${SAFE_BASE}/`)).toBe(true)
+        expect(resolved.startsWith(`${SAFE_BASE}${path.sep}`)).toBe(true)
       }),
       { numRuns: 1000 },
     )
@@ -39,7 +41,7 @@ describe('property-based security boundaries', () => {
         (segments) => {
           const input = segments.join('/')
           expect(canonicalizeMemoryRelativePath(input)).toBe(input)
-          expect(resolveWithin(SAFE_BASE, input).startsWith(`${SAFE_BASE}/`)).toBe(true)
+          expect(resolveWithin(SAFE_BASE, input).startsWith(`${SAFE_BASE}${path.sep}`)).toBe(true)
         },
       ),
       { numRuns: 500 },

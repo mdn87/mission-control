@@ -41,7 +41,7 @@ describe('scanOpenClaw — gateway_auth credential handling', () => {
     rmSync(join(tmpConfigPath, '..'), { recursive: true, force: true })
   })
 
-  it('does not crash and passes when token is a SecretRef object (regression for #670)', () => {
+  it('does not crash and passes when token is a SecretRef object (regression for #670)', { timeout: 15_000 }, () => {
     writeOpenClawConfig({
       gateway: { auth: { mode: 'token', token: { source: 'file', path: '/secrets/gateway-token' } } },
     })

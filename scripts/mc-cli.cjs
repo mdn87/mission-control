@@ -662,7 +662,8 @@ async function run() {
       const body = bodyFromFlags(parsed.flags);
       const result = await httpRequest({ baseUrl, apiKey, cookie: profile.cookie, method, route, body, timeoutMs });
       printResult(result, asJson);
-      process.exit(result.ok ? EXIT.OK : mapStatusToExit(result.status));
+      process.exitCode = result.ok ? EXIT.OK : mapStatusToExit(result.status);
+      return;
     }
 
     // Events watch (SSE)
@@ -699,7 +700,8 @@ async function run() {
     // If handler returned an http result directly (auth login/logout)
     if (result_or_config && 'ok' in result_or_config && 'status' in result_or_config) {
       printResult(result_or_config, asJson);
-      process.exit(result_or_config.ok ? EXIT.OK : mapStatusToExit(result_or_config.status));
+      process.exitCode = result_or_config.ok ? EXIT.OK : mapStatusToExit(result_or_config.status);
+      return;
     }
 
     // Otherwise it returned { method, route, body? } — execute the request
@@ -715,7 +717,7 @@ async function run() {
     });
 
     printResult(result, asJson);
-    process.exit(result.ok ? EXIT.OK : mapStatusToExit(result.status));
+    process.exitCode = result.ok ? EXIT.OK : mapStatusToExit(result.status);
   } catch (err) {
     const message = err?.message || String(err);
     if (asJson) {
@@ -723,7 +725,7 @@ async function run() {
     } else {
       console.error(`USAGE ERROR: ${message}`);
     }
-    process.exit(EXIT.USAGE);
+    process.exitCode = EXIT.USAGE;
   }
 }
 
