@@ -8,6 +8,9 @@ import {
   type OperatorSnapshot,
   type TaskLoopDelta,
   type TaskLoopProjection,
+  type WeirAction,
+  type WeirDelta,
+  type WeirProjection,
 } from './operator-contract'
 import type {
   BranReadinessProjection,
@@ -22,6 +25,7 @@ export interface LugosOperatorState {
   fleet: FleetProjection | null
   diagnostics: DiagnosticsProjection | null
   branReadiness: BranReadinessProjection | null
+  weir: WeirProjection | null
   receipts: OperatorReceipt[]
 }
 
@@ -32,6 +36,7 @@ export const EMPTY_LUGOS_OPERATOR_STATE: LugosOperatorState = {
   fleet: null,
   diagnostics: null,
   branReadiness: null,
+  weir: null,
   receipts: [],
 }
 
@@ -45,6 +50,27 @@ function asTaskLoopSnapshot(
   value: TaskLoopProjection | TaskLoopDelta,
 ): TaskLoopProjection {
   return { ...value, schema: 'lugos-task-loop/v1' }
+}
+
+function summarizeWeirActions(actions: WeirAction[]): WeirProjection['summary'] {
+  return {
+    total: actions.length,
+    proposed: actions.filter(action => action.state === 'proposed').length,
+    permit_received: actions.filter(action => action.state === 'permit_received').length,
+    completed: actions.filter(action => action.state === 'completed').length,
+    attention: actions.filter(action => (
+      action.state === 'failed'
+      || action.state === 'blocked'
+      || action.state === 'outcome_unknown'
+    )).length,
+    outcome_unknown: actions.filter(action => action.state === 'outcome_unknown').length,
+  }
+}
+
+function asWeirSnapshot(
+  value: WeirProjection | WeirDelta,
+): WeirProjection {
+  return { ...value, schema: 'lugos-hud-weir/v1' }
 }
 
 function mergeReceipts(
@@ -67,6 +93,7 @@ export function stateFromSnapshot(input: unknown): LugosOperatorState {
     fleet: snapshot.projections.find(item => item.name === 'fleet')?.value ?? null,
     diagnostics: snapshot.projections.find(item => item.name === 'cockpit-diagnostics')?.value ?? null,
     branReadiness: snapshot.projections.find(item => item.name === 'bran-readiness')?.value ?? null,
+    weir: snapshot.projections.find(item => item.name === 'weir')?.value ?? null,
     receipts: mergeReceipts([], snapshot.receipts),
   }
 }
@@ -88,6 +115,26 @@ export function applyOperatorEvent(
       ...state,
       cursor: event.cursor,
       taskLoop: asTaskLoopSnapshot(event.value),
+    }
+  }
+  if (event.projection === 'weir') {
+    if (event.type === 'projection.snapshot' || state.weir === null) {
+      return { ...state, cursor: event.cursor, weir: asWeirSnapshot(event.value) }
+    }
+    const actions = new Map(state.weir.actions.map(action => [action.proposal_hash, action]))
+    for (const action of event.value.actions) actions.set(action.proposal_hash, action)
+    const merged = [...actions.values()].sort((left, right) =>
+      right.occurred_at.localeCompare(left.occurred_at)
+      || left.proposal_hash.localeCompare(right.proposal_hash),
+    ).slice(0, 256)
+    return {
+      ...state,
+      cursor: event.cursor,
+      weir: {
+        ...asWeirSnapshot(event.value),
+        summary: summarizeWeirActions(merged),
+        actions: merged,
+      },
     }
   }
   if (event.type === 'projection.snapshot' || state.projection === null) {

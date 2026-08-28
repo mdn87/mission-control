@@ -1,0 +1,155 @@
+{
+  "fixture_schema": "lugos-hud-weir-fixture/v1",
+  "operator_snapshot": {
+    "schema": "lugos-operator-snapshot/v1",
+    "generatedAt": "2026-08-27T12:00:05.000Z",
+    "cursor": "event-fixture-1",
+    "projections": [
+      {
+        "name": "weir",
+        "value": {
+          "schema": "lugos-hud-weir/v1",
+          "generatedAt": "2026-08-27T12:00:05.000Z",
+          "cursor": "event-fixture-1",
+          "source": {
+            "state": "ready",
+            "diagnostics": []
+          },
+          "summary": {
+            "total": 1,
+            "proposed": 1,
+            "permit_received": 0,
+            "completed": 0,
+            "attention": 0,
+            "outcome_unknown": 0
+          },
+          "actions": [
+            {
+              "schema_version": 1,
+              "event_id": "event-fixture-1",
+              "event_type": "weir.action.proposed",
+              "occurred_at": "2026-08-27T12:00:05.000Z",
+              "producer": "weir",
+              "run_id": "run-fixture-1",
+              "assignment_id": "assignment-fixture-1",
+              "correlation_id": "request-fixture-1",
+              "work_context_hash": "sha256:cffabdff06bdd93a9de35c44111f6ed0cfd5f78cef9e6eb37e9ca59aa388a54b",
+              "action_id": "action-fixture-1",
+              "session_id": "session-fixture-1",
+              "action_type": "fill",
+              "state": "proposed",
+              "risk": "unknown",
+              "proposal_hash": "sha256:cf8f953db8b1422d9f43fd5447cdd88d15f415ec302f03abab565b964283399a",
+              "permit_hash": null,
+              "receipt_id": null,
+              "evidence_ref_count": 1,
+              "parameter_data_class": "personal",
+              "reason_code": null
+            }
+          ]
+        }
+      }
+    ],
+    "receipts": []
+  },
+  "snapshot_event": {
+    "schema": "lugos-operator-event/v1",
+    "cursor": "event-fixture-1",
+    "type": "projection.snapshot",
+    "projection": "weir",
+    "value": {
+      "schema": "lugos-hud-weir/v1",
+      "generatedAt": "2026-08-27T12:00:05.000Z",
+      "cursor": "event-fixture-1",
+      "source": {
+        "state": "ready",
+        "diagnostics": []
+      },
+      "summary": {
+        "total": 1,
+        "proposed": 1,
+        "permit_received": 0,
+        "completed": 0,
+        "attention": 0,
+        "outcome_unknown": 0
+      },
+      "actions": [
+        {
+          "schema_version": 1,
+          "event_id": "event-fixture-1",
+          "event_type": "weir.action.proposed",
+          "occurred_at": "2026-08-27T12:00:05.000Z",
+          "producer": "weir",
+          "run_id": "run-fixture-1",
+          "assignment_id": "assignment-fixture-1",
+          "correlation_id": "request-fixture-1",
+          "work_context_hash": "sha256:cffabdff06bdd93a9de35c44111f6ed0cfd5f78cef9e6eb37e9ca59aa388a54b",
+          "action_id": "action-fixture-1",
+          "session_id": "session-fixture-1",
+          "action_type": "fill",
+          "state": "proposed",
+          "risk": "unknown",
+          "proposal_hash": "sha256:cf8f953db8b1422d9f43fd5447cdd88d15f415ec302f03abab565b964283399a",
+          "permit_hash": null,
+          "receipt_id": null,
+          "evidence_ref_count": 1,
+          "parameter_data_class": "personal",
+          "reason_code": null
+        }
+      ]
+    },
+    "receipt": null
+  },
+  "delta_event": {
+    "schema": "lugos-operator-event/v1",
+    "cursor": "event-fixture-2",
+    "type": "projection.delta",
+    "projection": "weir",
+    "value": {
+      "schema": "lugos-hud-weir-delta/v1",
+      "generatedAt": "2026-08-27T12:00:06.000Z",
+      "cursor": "event-fixture-2",
+      "source": {
+        "state": "ready",
+        "diagnostics": []
+      },
+      "summary": {
+        "total": 1,
+        "proposed": 0,
+        "permit_received": 0,
+        "completed": 0,
+        "attention": 1,
+        "outcome_unknown": 1
+      },
+      "actions": [
+        {
+          "schema_version": 1,
+          "event_id": "event-fixture-2",
+          "event_type": "weir.action.outcome_unknown",
+          "occurred_at": "2026-08-27T12:00:06.000Z",
+          "producer": "weir",
+          "run_id": "run-fixture-1",
+          "assignment_id": "assignment-fixture-1",
+          "correlation_id": "request-fixture-1",
+          "work_context_hash": "sha256:cffabdff06bdd93a9de35c44111f6ed0cfd5f78cef9e6eb37e9ca59aa388a54b",
+          "action_id": "action-fixture-1",
+          "session_id": "session-fixture-1",
+          "action_type": "fill",
+          "state": "outcome_unknown",
+          "risk": "unknown",
+          "proposal_hash": "sha256:cf8f953db8b1422d9f43fd5447cdd88d15f415ec302f03abab565b964283399a",
+          "permit_hash": null,
+          "receipt_id": null,
+          "evidence_ref_count": 1,
+          "parameter_data_class": "personal",
+          "reason_code": "transport_timeout"
+        }
+      ]
+    },
+    "receipt": null
+  },
+  "reset_event": {
+    "schema": "lugos-operator-reset/v1",
+    "reason": "cursor_expired"
+  }
+}

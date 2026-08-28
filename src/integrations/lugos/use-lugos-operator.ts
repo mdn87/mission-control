@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import {
   operatorEventSchema,
+  operatorResetSchema,
   type OperatorSnapshot,
 } from './operator-contract'
 import {
@@ -68,14 +69,20 @@ export function useLugosOperator() {
         setError('The Lugos event stream returned an incompatible contract.')
       }
     }
-    const onReset = () => {
-      source.close()
-      setStreamState('connecting')
-      setLoading(true)
-      void loadSnapshot()
+    const onReset = (message: MessageEvent<string>) => {
+      try {
+        operatorResetSchema.parse(JSON.parse(message.data))
+        source.close()
+        setStreamState('connecting')
+        setLoading(true)
+        void loadSnapshot()
+      } catch {
+        setStreamState('degraded')
+        setError('The Lugos event stream returned an incompatible reset contract.')
+      }
     }
     source.addEventListener('operator', onOperatorEvent as EventListener)
-    source.addEventListener('reset', onReset)
+    source.addEventListener('reset', onReset as EventListener)
     source.onopen = () => setStreamState('live')
     source.onerror = () => setStreamState('degraded')
     return () => source.close()
