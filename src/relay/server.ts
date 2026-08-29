@@ -18,7 +18,7 @@ import {
   type Server as HttpsServer,
 } from 'node:https'
 import { isIP } from 'node:net'
-import { dirname, resolve } from 'node:path'
+import { dirname, posix, resolve } from 'node:path'
 import type { TLSSocket } from 'node:tls'
 import Database from 'better-sqlite3'
 import { ZodError } from 'zod'
@@ -155,9 +155,17 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
     listenHost,
     listenPort: integer(env, 'LUGOS_RELAY_PORT', 8793, 1024, 65_535),
     tlsCertificatePath: safeExistingFile(required(env, 'LUGOS_RELAY_TLS_CERT'), false),
-    tlsPrivateKeyPath: safeExistingFile(required(env, 'LUGOS_RELAY_TLS_KEY'), true),
+    tlsPrivateKeyPath: safeExistingFile(
+      required(env, 'LUGOS_RELAY_TLS_KEY'),
+      true,
+      env.CREDENTIALS_DIRECTORY,
+    ),
     tlsClientCaPath: safeExistingFile(required(env, 'LUGOS_RELAY_CLIENT_CA'), false),
-    signingKeyPath: safeExistingFile(required(env, 'LUGOS_RELAY_SIGNING_KEY'), true),
+    signingKeyPath: safeExistingFile(
+      required(env, 'LUGOS_RELAY_SIGNING_KEY'),
+      true,
+      env.CREDENTIALS_DIRECTORY,
+    ),
     signingKeyId: required(env, 'LUGOS_RELAY_SIGNING_KEY_ID'),
     issuerId: required(env, 'LUGOS_RELAY_ISSUER_ID'),
     lifetimeSeconds: integer(env, 'LUGOS_RELAY_CAPSULE_LIFETIME_SECONDS', 60, 1, 120),
@@ -166,13 +174,55 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
   }
 }
 
-function safeExistingFile(path: string, privateFile: boolean): string {
+interface FilePermissionMetadata {
+  mode: number
+  uid: number
+  gid: number
+}
+
+export function privateFilePermissionsAreSafe(
+  absolutePath: string,
+  metadata: FilePermissionMetadata,
+  credentialsDirectory: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform === 'win32' || (metadata.mode & 0o077) === 0) return true
+  if (platform !== 'linux' || !credentialsDirectory) return false
+
+  const normalizedDirectory = posix.normalize(credentialsDirectory)
+  const normalizedPath = posix.normalize(absolutePath)
+  return normalizedDirectory.startsWith('/run/credentials/')
+    && posix.dirname(normalizedPath) === normalizedDirectory
+    && metadata.uid === 0
+    && metadata.gid === 0
+    // LoadCredential grants the service user an ACL. Its mask appears in the
+    // group mode bits even though the owning root group has no file access.
+    && (metadata.mode & 0o777) === 0o440
+}
+
+function safeExistingFile(
+  path: string,
+  privateFile: boolean,
+  credentialsDirectory?: string,
+): string {
   const absolute = resolve(path)
   const metadata = lstatSync(absolute)
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
     throw new Error('relay_file_path_unsafe')
   }
-  if (privateFile && process.platform !== 'win32' && (metadata.mode & 0o077) !== 0) {
+  let resolvedCredentialsDirectory: string | undefined
+  if (credentialsDirectory) {
+    try {
+      resolvedCredentialsDirectory = realpathSync(resolve(credentialsDirectory))
+    } catch {
+      resolvedCredentialsDirectory = undefined
+    }
+  }
+  if (privateFile && !privateFilePermissionsAreSafe(
+    realpathSync(absolute),
+    metadata,
+    resolvedCredentialsDirectory,
+  )) {
     throw new Error('relay_private_file_permissions_unsafe')
   }
   return absolute
