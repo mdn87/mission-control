@@ -8,6 +8,7 @@ out/
 # Production
 build/
 dist/
+/dist-relay/
 
 # Misc
 .DS_Store

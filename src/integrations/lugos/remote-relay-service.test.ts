@@ -4,14 +4,20 @@ import { weirSnapshotSchema } from './operator-contract'
 import fixture from './__tests__/weir-projection-v1.json'
 import {
   configuredActorIdForUser,
+  configuredRemoteDecisionDeviceId,
   RemoteDecisionUnavailableError,
   submitRemoteDecision,
   type RemoteDecisionDependencies,
 } from './remote-relay-service'
 
-const projection = weirSnapshotSchema.parse(
-  fixture.operator_snapshot.projections[0].value,
-)
+const projection = weirSnapshotSchema.parse({
+  ...fixture.operator_snapshot.projections[0].value,
+  generatedAt: new Date().toISOString(),
+  actions: fixture.operator_snapshot.projections[0].value.actions.map(action => ({
+    ...action,
+    occurred_at: new Date().toISOString(),
+  })),
+})
 const action = projection.actions[0]
 const requestInput = {
   schema: 'mc.remote-decision-request/v1',
@@ -38,6 +44,7 @@ function dependencies(): RemoteDecisionDependencies {
   return {
     reloadWeirProjection: vi.fn().mockResolvedValue(projection),
     actorIdForUser: vi.fn().mockReturnValue('mc:user:42'),
+    expectedDeviceId: vi.fn().mockReturnValue('workstation-4070pc'),
     verifyStepUp: vi.fn().mockResolvedValue({
       step_up_ref: 'sha256:' + 'a'.repeat(64),
     }),
@@ -114,6 +121,72 @@ describe('remote relay service', () => {
     )).rejects.toMatchObject({ code: 'remote_proposal_binding_mismatch' })
     expect(deps.verifyStepUp).not.toHaveBeenCalled()
     expect(deps.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('rejects an aged or future proposal before step-up or enqueue', async () => {
+    const stale = dependencies()
+    vi.mocked(stale.reloadWeirProjection).mockResolvedValue({
+      ...projection,
+      actions: projection.actions.map(item => ({
+        ...item,
+        occurred_at: new Date(Date.now() - 601_000).toISOString(),
+      })),
+    })
+    await expect(submitRemoteDecision(
+      requestInput,
+      new Request('http://localhost/api/lugos/remote-decisions'),
+      user,
+      stale,
+      true,
+    )).rejects.toMatchObject({ code: 'remote_proposal_stale' })
+    expect(stale.verifyStepUp).not.toHaveBeenCalled()
+    expect(stale.enqueue).not.toHaveBeenCalled()
+
+    const future = dependencies()
+    vi.mocked(future.reloadWeirProjection).mockResolvedValue({
+      ...projection,
+      actions: projection.actions.map(item => ({
+        ...item,
+        occurred_at: new Date(Date.now() + 6_000).toISOString(),
+      })),
+    })
+    await expect(submitRemoteDecision(
+      requestInput,
+      new Request('http://localhost/api/lugos/remote-decisions'),
+      user,
+      future,
+      true,
+    )).rejects.toMatchObject({ code: 'remote_proposal_stale' })
+  })
+
+  it('accepts the frozen five-second proposal clock skew', async () => {
+    const deps = dependencies()
+    vi.mocked(deps.reloadWeirProjection).mockResolvedValue({
+      ...projection,
+      actions: projection.actions.map(item => ({
+        ...item,
+        occurred_at: new Date(Date.now() + 4_000).toISOString(),
+      })),
+    })
+    await expect(submitRemoteDecision(
+      requestInput,
+      new Request('http://localhost/api/lugos/remote-decisions'),
+      user,
+      deps,
+      true,
+    )).resolves.toMatchObject({ command_id: requestInput.idempotency_key })
+  })
+
+  it('rejects device ids that are unsafe to carry across services', () => {
+    expect(configuredRemoteDecisionDeviceId({
+      MC_REMOTE_DEVICE_ID: 'workstation-4070pc',
+    })).toBe('workstation-4070pc')
+    expect(() => configuredRemoteDecisionDeviceId({
+      MC_REMOTE_DEVICE_ID: '../workstation',
+    })).toThrow(RemoteDecisionUnavailableError)
+    expect(() => configuredRemoteDecisionDeviceId({
+      MC_REMOTE_DEVICE_ID: 'workstation 4070pc',
+    })).toThrow(RemoteDecisionUnavailableError)
   })
 
   it('rejects invalid step-up references and passthrough fields', async () => {

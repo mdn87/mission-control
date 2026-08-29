@@ -14,6 +14,7 @@ import {
   addOperatorReceipt,
 } from './operator-state'
 import { useLugosOperator } from './use-lugos-operator'
+import { RemoteDecisionPanel } from './remote-decision-panel'
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return '—'
@@ -361,6 +362,12 @@ export function LugosPanel() {
               )}
             </div>
           </section>
+
+          <RemoteDecisionPanel
+            actions={operatorState.weir?.actions ?? []}
+            canCommand={canCommand}
+            reload={reload}
+          />
 
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="rounded-lg border border-border bg-card p-4">

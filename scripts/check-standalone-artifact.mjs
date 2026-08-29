@@ -4,12 +4,15 @@ import path from 'node:path'
 const root = path.resolve('.next/standalone')
 const requiredFiles = [
   'server.js',
+  'dist-relay/relay/server.js',
+  'node_modules/zod/package.json',
   'openapi.json',
   'ops/templates/openclaw-gateway@.service',
   'src/lib/schema.sql',
 ]
 const allowedRoots = new Set([
   '.next',
+  'dist-relay',
   'messages',
   'node_modules',
   'openapi.json',

@@ -238,6 +238,61 @@ describe('isolated remote relay queue', () => {
     expect(queue.audit(signed.capsule_id).capsule_hash).toBe(canonicalDigest(signed))
   })
 
+  it('atomically claims the next device item and safely resumes an active lease', () => {
+    let now = new Date('2026-08-28T20:00:00.000Z')
+    const queue = new RemoteRelayQueue(database(), {
+      databasePurpose: 'remote-relay-isolated-v1',
+      enabled: true,
+      clock: () => now,
+      verifyCapsule,
+    })
+    const signed = capsule()
+    enqueue(queue, signed)
+
+    now = new Date('2026-08-28T20:00:01.000Z')
+    const first = queue.claimNext(signed.device_id, 10)
+    expect(first).not.toBeNull()
+    expect(first?.capsule).toEqual(signed)
+    expect(first?.queue_record).toMatchObject({
+      state: 'claimed',
+      claim_device_id: signed.device_id,
+    })
+    expect(queue.claimNext(signed.device_id, 10)?.queue_record.record_hash)
+      .toBe(first?.queue_record.record_hash)
+    expect(queue.claimNext('workstation-other')).toBeNull()
+
+    now = new Date('2026-08-28T20:00:11.001Z')
+    const reclaimed = queue.claimNext(signed.device_id, 10)
+    expect(reclaimed?.queue_record.state).toBe('claimed')
+    expect(reclaimed?.queue_record.revision).toBe(4)
+  })
+
+  it('maintenance requeues leases, expires capsules, and purges terminal bodies on policy', () => {
+    let now = new Date('2026-08-28T20:00:00.000Z')
+    const queue = new RemoteRelayQueue(database(), {
+      databasePurpose: 'remote-relay-isolated-v1',
+      enabled: true,
+      clock: () => now,
+      terminalBodyRetentionMs: 0,
+      verifyCapsule,
+    })
+    const signed = capsule()
+    enqueue(queue, signed)
+    now = new Date('2026-08-28T20:00:01.000Z')
+    queue.claimNext(signed.device_id, 1)
+    now = new Date('2026-08-28T20:00:02.000Z')
+    expect(queue.maintain()).toMatchObject({ requeued: 1 })
+    expect(queue.current(signed.capsule_id).state).toBe('queued')
+    now = new Date('2026-08-28T20:01:05.001Z')
+    expect(queue.maintain()).toEqual({
+      expired: 1,
+      requeued: 0,
+      bodies_purged: 1,
+    })
+    expect(queue.bodyIsPurged(signed.capsule_id)).toBe(true)
+    expect(queue.audit(signed.capsule_id).queue_state).toBe('expired')
+  })
+
   it('revokes durably before dispatch and rejects a conflicting replay', () => {
     const queue = new RemoteRelayQueue(database(), {
       databasePurpose: 'remote-relay-isolated-v1',
@@ -249,6 +304,9 @@ describe('isolated remote relay queue', () => {
     const record = revocation()
     const terminal = queue.revoke(record)
     expect(terminal.state).toBe('revoked')
+    expect(queue.revocation(record.capsule_id, record.command_id)).toEqual(record)
+    expect(() => queue.revocation(record.capsule_id, 'command-other'))
+      .toThrow(/relay_revocation_binding_mismatch/)
     expect(queue.revoke(record).record_hash).toBe(terminal.record_hash)
     expect(() => queue.revoke({
       ...record,

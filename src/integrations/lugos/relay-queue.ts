@@ -21,6 +21,7 @@ import { relayIssuerEnabled } from './relay-signer'
 const RELAY_QUEUE_SCHEMA_VERSION = 1
 const MAX_CLAIM_LEASE_SECONDS = 30
 const EXPIRY_SKEW_MS = 5_000
+const DEFAULT_TERMINAL_BODY_RETENTION_MS = 5 * 60 * 1_000
 const EFFECT_OUTCOMES = new Set([
   'completed',
   'failed',
@@ -54,6 +55,17 @@ interface CapsuleRow {
   terminal_at: string | null
   terminal_ref_hash: string | null
   body_purged: number
+}
+
+export interface ClaimedRemoteDecision {
+  capsule: RemoteDecisionCapsule
+  queue_record: RemoteDecisionQueueRecord
+}
+
+export interface RelayMaintenanceResult {
+  expired: number
+  requeued: number
+  bodies_purged: number
 }
 
 export class RelayQueueError extends Error {
@@ -94,6 +106,7 @@ export class RemoteRelayQueue {
   private readonly liveLimit: number
   private readonly clock: () => Date
   private readonly verifyCapsule: (capsule: RemoteDecisionCapsule) => void
+  private readonly terminalBodyRetentionMs: number
 
   constructor(
     private readonly db: Database.Database,
@@ -102,6 +115,7 @@ export class RemoteRelayQueue {
       enabled?: boolean
       liveLimit?: number
       clock?: () => Date
+      terminalBodyRetentionMs?: number
       verifyCapsule(capsule: RemoteDecisionCapsule): void
     },
   ) {
@@ -122,6 +136,14 @@ export class RemoteRelayQueue {
     }
     this.clock = options.clock ?? (() => new Date())
     this.verifyCapsule = options.verifyCapsule
+    this.terminalBodyRetentionMs = (
+      options.terminalBodyRetentionMs ?? DEFAULT_TERMINAL_BODY_RETENTION_MS
+    )
+    if (!Number.isSafeInteger(this.terminalBodyRetentionMs)
+      || this.terminalBodyRetentionMs < 0
+      || this.terminalBodyRetentionMs > DEFAULT_TERMINAL_BODY_RETENTION_MS) {
+      throw new TypeError('Remote relay terminal-body retention is invalid')
+    }
     this.initialize()
   }
 
@@ -357,6 +379,77 @@ export class RemoteRelayQueue {
     })()
   }
 
+  claimNext(
+    deviceId: string,
+    leaseSeconds = 10,
+  ): ClaimedRemoteDecision | null {
+    this.validateDeviceId(deviceId)
+    this.validateLease(leaseSeconds)
+    return this.db.transaction(() => {
+      const candidates = this.db.prepare(`
+        SELECT capsule_id FROM relay_capsules
+        WHERE device_id = ? AND state IN ('claimed', 'queued')
+        ORDER BY CASE state WHEN 'claimed' THEN 0 ELSE 1 END, issued_at, capsule_id
+      `).all(deviceId) as Array<{ capsule_id: string }>
+      const now = this.clock()
+      const nowMs = now.getTime()
+      const recordedAt = iso(now)
+
+      for (const candidate of candidates) {
+        let row = this.row(candidate.capsule_id)
+        let current = this.current(candidate.capsule_id)
+        const capsule = this.requireCapsuleBody(row)
+        const expiresMs = Date.parse(capsule.expires_at) + EXPIRY_SKEW_MS
+
+        if (nowMs > expiresMs) {
+          const expired = this.transition(row, current, {
+            state: 'expired',
+            claim_device_id: null,
+            claim_expires_at: null,
+            outcome: null,
+            recorded_at: recordedAt,
+          })
+          this.db.prepare(`
+            UPDATE relay_capsules SET terminal_at = ? WHERE capsule_id = ?
+          `).run(recordedAt, capsule.capsule_id)
+          current = expired
+          continue
+        }
+
+        if (row.state === 'claimed') {
+          if (current.claim_device_id !== deviceId
+            || current.claim_expires_at === null) {
+            throw new RelayQueueError('relay_queue_corrupt')
+          }
+          if (nowMs < Date.parse(current.claim_expires_at)) {
+            return { capsule, queue_record: current }
+          }
+          current = this.transition(row, current, {
+            state: 'queued',
+            claim_device_id: null,
+            claim_expires_at: null,
+            outcome: null,
+            recorded_at: recordedAt,
+          })
+          row = this.row(candidate.capsule_id)
+        }
+
+        if (current.state !== 'queued') continue
+        const claimExpiresMs = Math.min(nowMs + leaseSeconds * 1_000, expiresMs)
+        if (claimExpiresMs <= nowMs) continue
+        const claimed = this.transition(row, current, {
+          state: 'claimed',
+          claim_device_id: deviceId,
+          claim_expires_at: new Date(claimExpiresMs).toISOString(),
+          outcome: null,
+          recorded_at: recordedAt,
+        })
+        return { capsule, queue_record: claimed }
+      }
+      return null
+    })()
+  }
+
   claimedCapsule(capsuleId: string, deviceId: string): RemoteDecisionCapsule {
     const row = this.row(capsuleId)
     const current = this.current(capsuleId)
@@ -498,6 +591,24 @@ export class RemoteRelayQueue {
     })()
   }
 
+  revocation(
+    capsuleId: string,
+    commandId: string,
+  ): RemoteDecisionRevocation | null {
+    const row = this.db.prepare(`
+      SELECT revocation_json FROM relay_revocations WHERE capsule_id = ?
+    `).get(capsuleId) as { revocation_json: string } | undefined
+    if (!row) return null
+    const revocation = remoteDecisionRevocationSchema.parse(
+      JSON.parse(row.revocation_json),
+    )
+    verifyHashRecord(revocation, 'revocation_hash')
+    if (revocation.command_id !== commandId) {
+      throw new RelayQueueError('relay_revocation_binding_mismatch')
+    }
+    return revocation
+  }
+
   expire(capsuleId: string): RemoteDecisionQueueRecord {
     return this.db.transaction(() => {
       const row = this.row(capsuleId)
@@ -569,6 +680,69 @@ export class RemoteRelayQueue {
     return this.row(capsuleId).body_purged === 1
   }
 
+  targetDevice(capsuleId: string): string {
+    return this.row(capsuleId).device_id
+  }
+
+  maintain(): RelayMaintenanceResult {
+    return this.db.transaction(() => {
+      const now = this.clock()
+      const nowMs = now.getTime()
+      const recordedAt = iso(now)
+      let expired = 0
+      let requeued = 0
+      let bodiesPurged = 0
+      const live = this.db.prepare(`
+        SELECT capsule_id FROM relay_capsules
+        WHERE state IN ('queued', 'claimed')
+        ORDER BY issued_at, capsule_id
+      `).all() as Array<{ capsule_id: string }>
+
+      for (const item of live) {
+        const row = this.row(item.capsule_id)
+        const current = this.current(item.capsule_id)
+        const capsule = this.requireCapsuleBody(row)
+        if (nowMs > Date.parse(capsule.expires_at) + EXPIRY_SKEW_MS) {
+          this.transition(row, current, {
+            state: 'expired',
+            claim_device_id: null,
+            claim_expires_at: null,
+            outcome: null,
+            recorded_at: recordedAt,
+          })
+          this.db.prepare(`
+            UPDATE relay_capsules SET terminal_at = ? WHERE capsule_id = ?
+          `).run(recordedAt, item.capsule_id)
+          expired += 1
+          continue
+        }
+        if (row.state === 'claimed'
+          && current.claim_expires_at !== null
+          && nowMs >= Date.parse(current.claim_expires_at)) {
+          this.transition(row, current, {
+            state: 'queued',
+            claim_device_id: null,
+            claim_expires_at: null,
+            outcome: null,
+            recorded_at: recordedAt,
+          })
+          requeued += 1
+        }
+      }
+
+      const purgeBefore = new Date(nowMs - this.terminalBodyRetentionMs).toISOString()
+      const purged = this.db.prepare(`
+        UPDATE relay_capsules SET capsule_json = NULL, body_purged = 1
+        WHERE state IN ('acknowledged', 'denied', 'expired', 'revoked')
+          AND body_purged = 0
+          AND terminal_at IS NOT NULL
+          AND terminal_at <= ?
+      `).run(purgeBefore)
+      bodiesPurged = purged.changes
+      return { expired, requeued, bodies_purged: bodiesPurged }
+    })()
+  }
+
   private transition(
     row: CapsuleRow,
     current: RemoteDecisionQueueRecord,
@@ -636,5 +810,20 @@ export class RemoteRelayQueue {
       throw new RelayQueueError('relay_capsule_hash_mismatch')
     }
     return capsule
+  }
+
+
+  private validateDeviceId(deviceId: string): void {
+    if (typeof deviceId !== 'string' || deviceId.length < 1 || deviceId.length > 128) {
+      throw new TypeError('Remote relay device ID is invalid')
+    }
+  }
+
+  private validateLease(leaseSeconds: number): void {
+    if (!Number.isSafeInteger(leaseSeconds)
+      || leaseSeconds < 1
+      || leaseSeconds > MAX_CLAIM_LEASE_SECONDS) {
+      throw new TypeError('Remote relay claim lease is invalid')
+    }
   }
 }

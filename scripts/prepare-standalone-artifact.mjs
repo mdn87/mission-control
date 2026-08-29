@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, rm } from 'node:fs/promises'
+import { access, cp, mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 
 const root = path.resolve('.next/standalone')
@@ -6,6 +6,7 @@ const sourceRoot = path.join(root, 'src')
 const schemaPath = path.join(sourceRoot, 'lib', 'schema.sql')
 const allowedRoots = new Set([
   '.next',
+  'dist-relay',
   'messages',
   'node_modules',
   'openapi.json',
@@ -21,6 +22,21 @@ await access(path.join(root, 'server.js')).catch(() => {
 })
 await access(schemaPath).catch(() => {
   throw new Error('Standalone artifact is missing the runtime database schema')
+})
+
+// The relay is a separate Node entry point, so Next's server trace cannot infer
+// either its compiled files or its direct Zod dependency. Make both explicit
+// release inputs and let artifact:check enforce their presence.
+await rm(path.join(root, 'dist-relay'), { recursive: true, force: true })
+await cp(path.resolve('dist-relay'), path.join(root, 'dist-relay'), {
+  recursive: true,
+  force: true,
+})
+await rm(path.join(root, 'node_modules', 'zod'), { recursive: true, force: true })
+await cp(path.resolve('node_modules/zod'), path.join(root, 'node_modules', 'zod'), {
+  recursive: true,
+  dereference: true,
+  force: true,
 })
 
 for (const entry of await readdir(root)) {

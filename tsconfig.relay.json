@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "incremental": false,
+    "isolatedModules": false,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "noEmit": false,
+    "outDir": "dist-relay",
+    "rootDir": "src",
+    "target": "ES2022"
+  },
+  "include": [
+    "src/relay/**/*.ts",
+    "src/integrations/lugos/remote-decision-contract.ts",
+    "src/integrations/lugos/relay-issuer.ts",
+    "src/integrations/lugos/relay-queue.ts",
+    "src/integrations/lugos/relay-signer.ts"
+  ]
+}

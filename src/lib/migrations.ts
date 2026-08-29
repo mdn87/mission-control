@@ -1550,6 +1550,61 @@ const migrations: Migration[] = [
         db.exec(`ALTER TABLE agents ADD COLUMN claude_base_session_created_at TEXT DEFAULT NULL`)
       }
     }
+  },
+  {
+    id: '056_remote_decision_passkeys',
+    up(db: Database.Database) {
+      db.exec(`
+        CREATE TABLE remote_decision_passkeys (
+          credential_id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          public_key BLOB NOT NULL,
+          counter INTEGER NOT NULL CHECK (counter >= 0),
+          transports TEXT NOT NULL,
+          device_type TEXT NOT NULL CHECK (device_type IN ('singleDevice', 'multiDevice')),
+          backed_up INTEGER NOT NULL CHECK (backed_up IN (0, 1)),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          last_used_at INTEGER,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_remote_decision_passkeys_user
+          ON remote_decision_passkeys(user_id, created_at);
+
+        CREATE TABLE remote_decision_webauthn_challenges (
+          challenge_id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('registration', 'authentication')),
+          challenge TEXT NOT NULL,
+          binding_digest TEXT,
+          expires_at INTEGER NOT NULL,
+          consumed_at INTEGER,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          CHECK (
+            (kind = 'registration' AND binding_digest IS NULL)
+            OR (kind = 'authentication' AND binding_digest GLOB 'sha256:*')
+          )
+        );
+        CREATE INDEX idx_remote_decision_webauthn_challenges_expiry
+          ON remote_decision_webauthn_challenges(expires_at);
+
+        CREATE TABLE remote_decision_step_up_grants (
+          token_hash TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          binding_digest TEXT NOT NULL,
+          step_up_ref TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          consumed_at INTEGER,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_remote_decision_step_up_grants_binding
+          ON remote_decision_step_up_grants(user_id, binding_digest, expires_at);
+        CREATE INDEX idx_remote_decision_step_up_grants_expiry
+          ON remote_decision_step_up_grants(expires_at);
+      `)
+    }
   }
 ]
 

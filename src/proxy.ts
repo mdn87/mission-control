@@ -192,7 +192,25 @@ export function proxy(request: NextRequest) {
       publicReadOnlyPatterns.some((pattern) => hostMatches(pattern, hostName))
     )
 
-  if (isPublicReadOnlyOrigin && pathname === '/api/lugos/commands') {
+  const remoteDecisionPatterns = String(
+    process.env.MC_LUGOS_REMOTE_DECISION_HOSTS || '',
+  )
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const isRemoteDecisionOrigin = remoteDecisionPatterns.length > 0
+    && requestHosts.some((hostName) =>
+      remoteDecisionPatterns.some((pattern) => hostMatches(pattern, hostName))
+    )
+  const isRemoteDecisionPath = pathname === '/api/lugos/remote-decisions'
+    || pathname.startsWith('/api/lugos/remote-decisions/')
+  const isLugosMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(
+    request.method.toUpperCase(),
+  ) && pathname.startsWith('/api/lugos/')
+
+  if (isPublicReadOnlyOrigin
+    && isLugosMutation
+    && !(isRemoteDecisionOrigin && isRemoteDecisionPath)) {
     return addSecurityHeaders(
       NextResponse.json(
         { error: 'Lugos commands are disabled on the public origin' },

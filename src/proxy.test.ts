@@ -189,6 +189,43 @@ describe('proxy host matching', () => {
     expect(response.status).not.toBe(403)
   })
 
+  it('allows only the explicit remote-decision exception on the HTTPS public origin', async () => {
+    vi.resetModules()
+    vi.doMock('node:os', () => ({
+      default: { hostname: () => 'lugos-host' },
+      hostname: () => 'lugos-host',
+    }))
+    const { proxy } = await import('./proxy')
+    const request = (pathname: string) => ({
+      headers: new Headers({
+        host: 'knot.newman.foo',
+        origin: 'https://knot.newman.foo',
+        'x-forwarded-host': 'knot.newman.foo',
+      }),
+      nextUrl: {
+        host: 'knot.newman.foo',
+        hostname: 'knot.newman.foo',
+        pathname,
+        searchParams: new URLSearchParams(),
+        clone: () => ({ pathname }),
+      },
+      method: 'POST',
+      cookies: { get: () => ({ value: 'authenticated-session' }) },
+    } as any)
+
+    setNodeEnv('production')
+    process.env.MC_ALLOWED_HOSTS = '10.0.1.33,lugos-host,knot.newman.foo'
+    process.env.MC_LUGOS_PUBLIC_READ_ONLY_HOSTS = 'knot.newman.foo'
+    process.env.MC_LUGOS_REMOTE_DECISION_HOSTS = 'knot.newman.foo'
+
+    expect(proxy(request('/api/lugos/remote-decisions/step-up/options')).status)
+      .not.toBe(403)
+    expect(proxy(request('/api/lugos/model-budgets')).status).toBe(403)
+
+    delete process.env.MC_LUGOS_PUBLIC_READ_ONLY_HOSTS
+    delete process.env.MC_LUGOS_REMOTE_DECISION_HOSTS
+  })
+
   it('allows unauthenticated health probe for /api/status?action=health', async () => {
     vi.resetModules()
     vi.doMock('node:os', () => ({

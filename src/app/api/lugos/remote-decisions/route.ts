@@ -7,6 +7,7 @@ import { weirSnapshotSchema } from '@/integrations/lugos/operator-contract'
 import { enqueueRemoteDecision } from '@/integrations/lugos/remote-relay-client'
 import {
   configuredActorIdForUser,
+  configuredRemoteDecisionDeviceId,
   remoteDecisionsEnabled,
   RemoteDecisionUnavailableError,
   submitRemoteDecision,
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     const capsule = await submitRemoteDecision(input, request, auth.user, {
       reloadWeirProjection,
       actorIdForUser: configuredActorIdForUser,
+      expectedDeviceId: configuredRemoteDecisionDeviceId,
       verifyStepUp: verifyRemoteDecisionStepUp,
       enqueue: enqueueRemoteDecision,
     })

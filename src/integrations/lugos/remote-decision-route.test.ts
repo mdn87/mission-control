@@ -56,6 +56,18 @@ const capsule = {
   signature: 'A'.repeat(86),
 }
 
+function currentSnapshot() {
+  const snapshot = structuredClone(fixture.operator_snapshot)
+  const projection = snapshot.projections.find(item => item.name === 'weir')
+  if (!projection || projection.name !== 'weir') throw new Error('missing fixture')
+  projection.value.generatedAt = new Date().toISOString()
+  projection.value.actions = projection.value.actions.map(item => ({
+    ...item,
+    occurred_at: new Date().toISOString(),
+  }))
+  return snapshot
+}
+
 function request(body: unknown): Request {
   return new Request('http://localhost/api/lugos/remote-decisions', {
     method: 'POST',
@@ -72,6 +84,7 @@ describe('Mission Control remote decision route', () => {
     process.env = { ...originalEnv }
     delete process.env.MC_REMOTE_DECISIONS_ENABLED
     delete process.env.MC_REMOTE_ACTOR_FORMAT
+    delete process.env.MC_REMOTE_DEVICE_ID
     requireRoleMock.mockReturnValue({
       user: {
         id: 42,
@@ -85,7 +98,7 @@ describe('Mission Control remote decision route', () => {
         last_login_at: null,
       },
     })
-    fetchOperatorSnapshotMock.mockResolvedValue(fixture.operator_snapshot)
+    fetchOperatorSnapshotMock.mockImplementation(async () => currentSnapshot())
     verifyRemoteDecisionStepUpMock.mockResolvedValue({
       step_up_ref: 'sha256:' + 'a'.repeat(64),
     })
@@ -127,6 +140,7 @@ describe('Mission Control remote decision route', () => {
     expect(enqueueRemoteDecisionMock).not.toHaveBeenCalled()
 
     process.env.MC_REMOTE_ACTOR_FORMAT = 'mc-user-numeric-v1'
+    process.env.MC_REMOTE_DEVICE_ID = 'workstation-4070pc'
     verifyRemoteDecisionStepUpMock.mockRejectedValueOnce(
       new Error('provider unavailable'),
     )
@@ -138,6 +152,7 @@ describe('Mission Control remote decision route', () => {
   it('enqueues only the exact reloaded binding after step-up', async () => {
     process.env.MC_REMOTE_DECISIONS_ENABLED = 'true'
     process.env.MC_REMOTE_ACTOR_FORMAT = 'mc-user-numeric-v1'
+    process.env.MC_REMOTE_DEVICE_ID = 'workstation-4070pc'
     const response = await POST(request(input))
     expect(response.status).toBe(202)
     expect(await response.json()).toEqual(capsule)
@@ -159,6 +174,7 @@ describe('Mission Control remote decision route', () => {
   it('rejects passthrough fields before projection reload or enqueue', async () => {
     process.env.MC_REMOTE_DECISIONS_ENABLED = 'true'
     process.env.MC_REMOTE_ACTOR_FORMAT = 'mc-user-numeric-v1'
+    process.env.MC_REMOTE_DEVICE_ID = 'workstation-4070pc'
     const response = await POST(request({
       ...input,
       parameters: { value: 'forbidden' },
