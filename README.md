@@ -208,6 +208,10 @@ agent, task, and system events for operator review.
 
 ## Documentation
 
+The disabled-by-default Lugos/WEIR signed decision relay source boundary is documented
+in [`docs/lugos-remote-relay.md`](docs/lugos-remote-relay.md). It does not enable a
+listener, provision signer keys, or change the existing HUD command authority path.
+
 | Guide | Use it for |
 |---|---|
 | [Quickstart](docs/quickstart.md) | Register an agent and run the first task loop |
