@@ -18,7 +18,7 @@ import {
   type Server as HttpsServer,
 } from 'node:https'
 import { isIP } from 'node:net'
-import { dirname, posix, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import type { TLSSocket } from 'node:tls'
 import Database from 'better-sqlite3'
 import { ZodError } from 'zod'
@@ -33,6 +33,7 @@ import {
 } from '../integrations/lugos/relay-queue'
 import { RemoteRelaySigner } from '../integrations/lugos/relay-signer'
 import { FileRelayKeyProvider } from './file-key-provider'
+import { privateFilePermissionsAreSafe } from './private-file-permissions'
 import {
   RelayRequestError,
   RemoteRelayApplication,
@@ -53,6 +54,7 @@ interface RelayConfig {
   tlsPrivateKeyPath: string
   tlsClientCaPath: string
   signingKeyPath: string
+  credentialsDirectory: string | undefined
   signingKeyId: string
   issuerId: string
   lifetimeSeconds: number
@@ -147,6 +149,7 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
   if (!/^[A-Za-z0-9._~-]{32,256}$/.test(token)) {
     throw new Error('relay_internal_token_invalid')
   }
+  const credentialsDirectory = resolveCredentialsDirectory(env.CREDENTIALS_DIRECTORY)
   return {
     databasePath: safeDatabasePath(required(env, 'LUGOS_RELAY_DB_PATH')),
     internalHost,
@@ -158,14 +161,15 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
     tlsPrivateKeyPath: safeExistingFile(
       required(env, 'LUGOS_RELAY_TLS_KEY'),
       true,
-      env.CREDENTIALS_DIRECTORY,
+      credentialsDirectory,
     ),
     tlsClientCaPath: safeExistingFile(required(env, 'LUGOS_RELAY_CLIENT_CA'), false),
     signingKeyPath: safeExistingFile(
       required(env, 'LUGOS_RELAY_SIGNING_KEY'),
       true,
-      env.CREDENTIALS_DIRECTORY,
+      credentialsDirectory,
     ),
+    credentialsDirectory,
     signingKeyId: required(env, 'LUGOS_RELAY_SIGNING_KEY_ID'),
     issuerId: required(env, 'LUGOS_RELAY_ISSUER_ID'),
     lifetimeSeconds: integer(env, 'LUGOS_RELAY_CAPSULE_LIFETIME_SECONDS', 60, 1, 120),
@@ -174,30 +178,13 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
   }
 }
 
-interface FilePermissionMetadata {
-  mode: number
-  uid: number
-  gid: number
-}
-
-export function privateFilePermissionsAreSafe(
-  absolutePath: string,
-  metadata: FilePermissionMetadata,
-  credentialsDirectory: string | undefined,
-  platform: NodeJS.Platform = process.platform,
-): boolean {
-  if (platform === 'win32' || (metadata.mode & 0o077) === 0) return true
-  if (platform !== 'linux' || !credentialsDirectory) return false
-
-  const normalizedDirectory = posix.normalize(credentialsDirectory)
-  const normalizedPath = posix.normalize(absolutePath)
-  return normalizedDirectory.startsWith('/run/credentials/')
-    && posix.dirname(normalizedPath) === normalizedDirectory
-    && metadata.uid === 0
-    && metadata.gid === 0
-    // LoadCredential grants the service user an ACL. Its mask appears in the
-    // group mode bits even though the owning root group has no file access.
-    && (metadata.mode & 0o777) === 0o440
+function resolveCredentialsDirectory(path: string | undefined): string | undefined {
+  if (!path) return undefined
+  try {
+    return realpathSync(resolve(path))
+  } catch {
+    return undefined
+  }
 }
 
 function safeExistingFile(
@@ -210,18 +197,10 @@ function safeExistingFile(
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
     throw new Error('relay_file_path_unsafe')
   }
-  let resolvedCredentialsDirectory: string | undefined
-  if (credentialsDirectory) {
-    try {
-      resolvedCredentialsDirectory = realpathSync(resolve(credentialsDirectory))
-    } catch {
-      resolvedCredentialsDirectory = undefined
-    }
-  }
   if (privateFile && !privateFilePermissionsAreSafe(
     realpathSync(absolute),
     metadata,
-    resolvedCredentialsDirectory,
+    credentialsDirectory,
   )) {
     throw new Error('relay_private_file_permissions_unsafe')
   }
@@ -252,6 +231,7 @@ function createApplication(config: RelayConfig): {
     keyPath: config.signingKeyPath,
     keyId: config.signingKeyId,
     issuerId: config.issuerId,
+    credentialsDirectory: config.credentialsDirectory,
   })
   const signingKey = keyProvider.activeSigningKey()
   const publicKey = createPublicKey(signingKey.private_key.export({

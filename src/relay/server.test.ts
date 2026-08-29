@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { privateFilePermissionsAreSafe } from './server'
+import { privateFilePermissionsAreSafe } from './private-file-permissions'
 
 const SYSTEMD_DIRECTORY = '/run/credentials/lugos-remote-relay.service'
 const SYSTEMD_KEY = `${SYSTEMD_DIRECTORY}/relay-signing-key`

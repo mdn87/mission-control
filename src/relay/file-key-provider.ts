@@ -5,12 +5,14 @@ import {
 import {
   lstatSync,
   readFileSync,
+  realpathSync,
 } from 'node:fs'
 import { resolve } from 'node:path'
 import type {
   RelayKeyProvider,
   RelaySigningKey,
 } from '../integrations/lugos/relay-signer'
+import { privateFilePermissionsAreSafe } from './private-file-permissions'
 
 export class FileRelayKeyProvider implements RelayKeyProvider {
   private readonly key: RelaySigningKey
@@ -19,13 +21,18 @@ export class FileRelayKeyProvider implements RelayKeyProvider {
     keyPath: string
     keyId: string
     issuerId: string
+    credentialsDirectory?: string
   }) {
     const keyPath = resolve(input.keyPath)
     const metadata = lstatSync(keyPath)
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
       throw new Error('relay_signing_key_path_unsafe')
     }
-    if (process.platform !== 'win32' && (metadata.mode & 0o077) !== 0) {
+    if (!privateFilePermissionsAreSafe(
+      realpathSync(keyPath),
+      metadata,
+      input.credentialsDirectory,
+    )) {
       throw new Error('relay_signing_key_permissions_unsafe')
     }
     const privateKey = createPrivateKey(readFileSync(keyPath))
