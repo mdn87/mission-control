@@ -5,6 +5,7 @@ import {
   makeBranReadinessProjection,
   makeDiagnosticsProjection,
   makeFleetProjection,
+  makeNetworkDevicesProjection,
 } from './__tests__/cockpit-fixtures'
 
 function cockpitSnapshot() {
@@ -34,6 +35,19 @@ describe('Mission Control cockpit runtime gate', () => {
 
   it('returns the immutable release snapshot unchanged when enabled', () => {
     const snapshot = cockpitSnapshot()
+    expect(applyCockpitRuntimeGate(snapshot, true)).toBe(snapshot)
+  })
+})
+
+describe('Mission Control network-devices runtime gate', () => {
+  it('treats the network-devices projection as cockpit-gated', () => {
+    const snapshot = makeSnapshot({
+      projections: [
+        ...makeSnapshot().projections,
+        { name: 'network-devices', value: makeNetworkDevicesProjection() },
+      ],
+    })
+    expect(applyCockpitRuntimeGate(snapshot, false).projections.map(item => item.name)).toEqual(['autowork'])
     expect(applyCockpitRuntimeGate(snapshot, true)).toBe(snapshot)
   })
 })

@@ -129,3 +129,30 @@ pnpm build
 
 `pnpm lugos:compat` verifies that the plugin, router, navigation, and role
 seams used by this patch exist in upstream v2.2.0 and v2.3.0.
+
+## Network device registry
+
+The cockpit gains a `Devices` tab backed by the read-only
+`lugos-network-devices/v1` projection (`network-devices`). The Lugos operator
+API reconciles router observations (fixture-backed in the first slice; a live
+GL-B3000 read is a separately authorized step) into durable device and
+interface state and projects new, live, stale, offline, unknown, changed,
+managed, and randomized-MAC devices with bounded interface evidence. The
+projection is cockpit-gated by `MC_LUGOS_COCKPIT=1` like the other cockpit
+projections and is absent when the operator API runs with
+`LUGOS_NETWORK_REGISTRY_MODE=off`; Mission Control then shows no Devices tab.
+
+Two closed operator commands join the existing allowlist:
+
+- `device.add` promotes one provisional device to an operator-owned identity
+  (name, category, manufacturer, model, location, roles, notes, optional
+  `target_slug`). A target slug must name an existing `lugos-link` target;
+  the registry never writes target files, so non-operable devices stay in the
+  general inventory with `target_slug: null`.
+- `device.merge` binds a provisional device's interfaces to an existing
+  device. It creates no device and retains every observation.
+
+Both commands require the Mission Control `operator` role, the server-side
+Lugos bearer, and a unique idempotency key, and both produce a durable Lugos
+receipt. The projection contract pins `adapter.mutation` to `none`; there is no
+reservation, DHCP, router, or scan command in this scope.

@@ -16,6 +16,7 @@ import type {
   BranReadinessProjection,
   DiagnosticsProjection,
   FleetProjection,
+  NetworkDevicesProjection,
 } from './cockpit-contract'
 
 export interface LugosOperatorState {
@@ -26,6 +27,7 @@ export interface LugosOperatorState {
   diagnostics: DiagnosticsProjection | null
   branReadiness: BranReadinessProjection | null
   weir: WeirProjection | null
+  networkDevices: NetworkDevicesProjection | null
   receipts: OperatorReceipt[]
 }
 
@@ -37,6 +39,7 @@ export const EMPTY_LUGOS_OPERATOR_STATE: LugosOperatorState = {
   diagnostics: null,
   branReadiness: null,
   weir: null,
+  networkDevices: null,
   receipts: [],
 }
 
@@ -94,6 +97,7 @@ export function stateFromSnapshot(input: unknown): LugosOperatorState {
     diagnostics: snapshot.projections.find(item => item.name === 'cockpit-diagnostics')?.value ?? null,
     branReadiness: snapshot.projections.find(item => item.name === 'bran-readiness')?.value ?? null,
     weir: snapshot.projections.find(item => item.name === 'weir')?.value ?? null,
+    networkDevices: snapshot.projections.find(item => item.name === 'network-devices')?.value ?? null,
     receipts: mergeReceipts([], snapshot.receipts),
   }
 }

@@ -4,6 +4,7 @@ const COCKPIT_PROJECTIONS = new Set([
   'fleet',
   'cockpit-diagnostics',
   'bran-readiness',
+  'network-devices',
 ])
 
 export function isLugosCockpitEnabled(

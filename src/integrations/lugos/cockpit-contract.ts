@@ -301,8 +301,107 @@ export const branReadinessProjectionSchema = z.object({
   }).strict()).max(256),
 }).strict()
 
+export const NETWORK_DEVICES_PROJECTION_SCHEMA = 'lugos-network-devices/v1'
+
+const deviceSlug = z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9._-]*$/)
+const macAddress = z.string().regex(/^[0-9A-F]{2}(?::[0-9A-F]{2}){5}$/)
+const ipv4 = z.string().regex(/^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/)
+const observedHostname = z.string().min(1).max(63).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+
+export const deviceInventoryStateSchema = z.enum(['provisional', 'identified', 'managed', 'merged'])
+export const deviceConnectionStateSchema = z.enum(['live', 'stale', 'offline', 'unknown'])
+export const deviceFlagSchema = z.enum(['new', 'changed', 'randomized_mac'])
+export const deviceCategorySchema = z.enum([
+  'computer',
+  'phone',
+  'tablet',
+  'printer',
+  'tv',
+  'router',
+  'switch',
+  'kvm',
+  'iot',
+  'appliance',
+  'other',
+])
+const reservationState = z.enum(['reserved', 'dynamic', 'unknown'])
+const connectionKind = z.enum(['ethernet', 'wifi', 'unknown'])
+
+const networkInterfaceSchema = z.object({
+  interfaceId: deviceSlug,
+  kind: connectionKind,
+  mac: macAddress,
+  privateAddress: z.boolean(),
+  connectionState: deviceConnectionStateSchema,
+  currentAddress: ipv4.nullable(),
+  observedHostname: observedHostname.nullable(),
+  connection: connectionKind,
+  ssid: z.string().min(1).max(32).nullable(),
+  firstSeenAt: timestamp,
+  lastSeenAt: timestamp,
+  leaseExpiresAt: nullableTimestamp,
+  reservation: reservationState,
+  observationCount: z.number().int().positive(),
+}).strict()
+
+const networkDeviceSchema = z.object({
+  deviceId: deviceSlug,
+  name: z.string().min(1).max(96),
+  inventoryState: deviceInventoryStateSchema,
+  connectionState: deviceConnectionStateSchema,
+  flags: z.array(deviceFlagSchema).max(3),
+  category: deviceCategorySchema.nullable(),
+  manufacturer: z.string().min(1).max(64).nullable(),
+  model: z.string().min(1).max(64).nullable(),
+  location: z.string().min(1).max(64).nullable(),
+  roles: z.array(code.max(64)).max(16),
+  targetSlug: deviceSlug.nullable(),
+  mergedInto: deviceSlug.nullable(),
+  firstSeenAt: nullableTimestamp,
+  lastSeenAt: nullableTimestamp,
+  lastSeenAgeSecs: nullableInteger,
+  currentAddress: ipv4.nullable(),
+  observedHostname: observedHostname.nullable(),
+  connection: connectionKind,
+  reservation: reservationState,
+  observationCount: nonnegativeInteger,
+  interfaces: z.array(networkInterfaceSchema).max(16),
+  diagnosticCodes: diagnostics,
+}).strict()
+
+export const networkDevicesProjectionSchema = z.object({
+  schema: z.literal(NETWORK_DEVICES_PROJECTION_SCHEMA),
+  generatedAt: timestamp,
+  revision: nonnegativeInteger,
+  source: cockpitSourceSchema,
+  adapter: z.object({
+    kind: z.enum(['fixture', 'live', 'off']),
+    router: deviceSlug,
+    pollSecs: z.number().int().positive(),
+    liveAfterSecs: z.number().int().positive(),
+    staleAfterSecs: z.number().int().positive(),
+    mutation: z.literal('none'),
+  }).strict(),
+  summary: z.object({
+    total: nonnegativeInteger,
+    new: nonnegativeInteger,
+    live: nonnegativeInteger,
+    stale: nonnegativeInteger,
+    offline: nonnegativeInteger,
+    unknown: nonnegativeInteger,
+    changed: nonnegativeInteger,
+    managed: nonnegativeInteger,
+    randomized: nonnegativeInteger,
+  }).strict(),
+  devices: z.array(networkDeviceSchema).max(512),
+}).strict()
+
 export type CockpitState = z.infer<typeof cockpitStateSchema>
 export type CockpitSource = z.infer<typeof cockpitSourceSchema>
 export type FleetProjection = z.infer<typeof fleetProjectionSchema>
 export type DiagnosticsProjection = z.infer<typeof diagnosticsProjectionSchema>
 export type BranReadinessProjection = z.infer<typeof branReadinessProjectionSchema>
+export type NetworkDevicesProjection = z.infer<typeof networkDevicesProjectionSchema>
+export type NetworkDevice = NetworkDevicesProjection['devices'][number]
+export type NetworkDeviceInterface = NetworkDevice['interfaces'][number]
+export type DeviceCategory = z.infer<typeof deviceCategorySchema>
