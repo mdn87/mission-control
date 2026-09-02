@@ -4,6 +4,7 @@ import {
   makeBranReadinessProjection,
   makeDiagnosticsProjection,
   makeFleetProjection,
+  makeNetworkDevicesProjection,
 } from './__tests__/cockpit-fixtures'
 
 const {
@@ -212,5 +213,62 @@ describe('Mission Control Lugos route boundary', () => {
     ))
     expect(response.status).toBe(400)
     expect(openOperatorEventStreamMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('Mission Control network-devices route boundary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    requireRoleMock.mockReturnValue({ user: { role: 'viewer' } })
+  })
+
+  it('passes the network-devices projection through the viewer snapshot only when the cockpit flag is on', async () => {
+    const previous = process.env.MC_LUGOS_COCKPIT
+    fetchOperatorSnapshotMock.mockResolvedValue(makeSnapshot({
+      projections: [
+        ...makeSnapshot().projections,
+        { name: 'network-devices', value: makeNetworkDevicesProjection() },
+      ],
+    }))
+    try {
+      process.env.MC_LUGOS_COCKPIT = '1'
+      const enabled = await getSnapshot(new Request('http://localhost/api/lugos/snapshot'))
+      const body = await enabled.json()
+      expect(body.projections.map((item: { name: string }) => item.name)).toEqual(['autowork', 'network-devices'])
+      expect(JSON.stringify(body)).not.toContain('notes')
+      process.env.MC_LUGOS_COCKPIT = '0'
+      const disabled = await getSnapshot(new Request('http://localhost/api/lugos/snapshot'))
+      expect((await disabled.json()).projections.map((item: { name: string }) => item.name)).toEqual(['autowork'])
+    } finally {
+      if (previous === undefined) delete process.env.MC_LUGOS_COCKPIT
+      else process.env.MC_LUGOS_COCKPIT = previous
+    }
+  })
+
+  it('forwards device commands only from an operator session', async () => {
+    requireRoleMock.mockReturnValue({ user: { role: 'operator' } })
+    sendOperatorCommandMock.mockResolvedValue(makeReceipt({ type: 'device.merge' }))
+    const response = await postCommand(new Request('http://localhost/api/lugos/commands', {
+      method: 'POST',
+      body: JSON.stringify({
+        schema: 'lugos-operator-command/v1',
+        type: 'device.merge',
+        idempotency_key: 'mc-merge-1',
+        payload: { source_device_id: 'dev-769335c39dd4', into_device_id: '4070pc' },
+      }),
+    }))
+    expect(response.status).toBe(202)
+    expect(sendOperatorCommandMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'device.merge' }))
+
+    const invalid = await postCommand(new Request('http://localhost/api/lugos/commands', {
+      method: 'POST',
+      body: JSON.stringify({
+        schema: 'lugos-operator-command/v1',
+        type: 'reservation.apply',
+        idempotency_key: 'mc-res-1',
+        payload: { device_id: '4070pc', address: '10.0.1.30' },
+      }),
+    }))
+    expect(invalid.status).toBe(400)
   })
 })

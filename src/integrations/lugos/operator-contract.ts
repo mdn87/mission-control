@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import {
   branReadinessProjectionSchema,
+  deviceCategorySchema,
   diagnosticsProjectionSchema,
   fleetProjectionSchema,
+  networkDevicesProjectionSchema,
 } from './cockpit-contract'
 
 export const OPERATOR_SNAPSHOT_SCHEMA = 'lugos-operator-snapshot/v1'
@@ -371,7 +373,11 @@ export const operatorSnapshotSchema = z.object({
       name: z.literal('weir'),
       value: weirSnapshotSchema,
     }).strict(),
-  ])).max(6),
+    z.object({
+      name: z.literal('network-devices'),
+      value: networkDevicesProjectionSchema,
+    }).strict(),
+  ])).max(7),
   receipts: z.array(operatorReceiptSchema).max(1024),
 }).strict().superRefine((snapshot, context) => {
   const names = new Set(snapshot.projections.map(projection => projection.name))
@@ -479,10 +485,46 @@ export const taskApproveCommandSchema = z.object({
   }).strict(),
 }).strict()
 
+const deviceSlug = z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9._-]*$/)
+const optionalDeviceText = (max: number) => z.string().trim().min(1).max(max).nullable()
+
+export const deviceAddCommandSchema = z.object({
+  schema: z.literal(OPERATOR_COMMAND_SCHEMA),
+  type: z.literal('device.add'),
+  idempotency_key: identifier,
+  payload: z.object({
+    source_device_id: deviceSlug,
+    device_id: deviceSlug,
+    name: z.string().trim().min(1).max(96),
+    category: deviceCategorySchema,
+    manufacturer: optionalDeviceText(64),
+    model: optionalDeviceText(64),
+    location: optionalDeviceText(64),
+    roles: z.array(z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/)).max(16),
+    notes: optionalDeviceText(500),
+    target_slug: deviceSlug.nullable(),
+  }).strict(),
+}).strict()
+
+export const deviceMergeCommandSchema = z.object({
+  schema: z.literal(OPERATOR_COMMAND_SCHEMA),
+  type: z.literal('device.merge'),
+  idempotency_key: identifier,
+  payload: z.object({
+    source_device_id: deviceSlug,
+    into_device_id: deviceSlug,
+  }).strict().refine(
+    value => value.source_device_id !== value.into_device_id,
+    'A device cannot merge into itself',
+  ),
+}).strict()
+
 export const operatorCommandSchema = z.union([
   approvalRequestCommandSchema,
   mailHandoffCommandSchema,
   taskApproveCommandSchema,
+  deviceAddCommandSchema,
+  deviceMergeCommandSchema,
 ])
 
 export const operatorCursorSchema = identifier

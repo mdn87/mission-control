@@ -1,7 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useMissionControl } from '@/store'
 import type { AutoworkRun } from './operator-contract'
+import { addOperatorReceipt } from './operator-state'
 import {
   buildSpatialLayout,
   type SpatialEntity,
@@ -202,10 +204,14 @@ function DenseDetail({
 export function LugosSpatialOverview() {
   const {
     operatorState,
+    setOperatorState,
     loading,
     streamState,
     error,
+    reload,
   } = useLugosOperator()
+  const currentUser = useMissionControl(state => state.currentUser)
+  const canCommand = currentUser?.role === 'operator' || currentUser?.role === 'admin'
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [cockpitDetail, setCockpitDetail] = useState<CockpitDetail | null>(null)
   const projection = operatorState.projection
@@ -224,6 +230,7 @@ export function LugosSpatialOverview() {
         fleet: operatorState.fleet,
         diagnostics: operatorState.diagnostics,
         branReadiness: operatorState.branReadiness,
+        networkDevices: operatorState.networkDevices,
       }
     : null
   const openCockpitDetail = (detail: CockpitDetail) => {
@@ -424,6 +431,9 @@ export function LugosSpatialOverview() {
               detail={cockpitDetail}
               onSelect={setCockpitDetail}
               onClose={() => setCockpitDetail(null)}
+              canCommand={canCommand}
+              onReceipt={receipt => setOperatorState(current => addOperatorReceipt(current, receipt))}
+              onReload={reload}
             />
           )}
           {selected && <DenseDetail entity={selected} runs={projection.runs} />}

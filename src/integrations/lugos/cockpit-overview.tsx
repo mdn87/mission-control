@@ -7,11 +7,14 @@ import type {
   CockpitState,
   DiagnosticsProjection,
   FleetProjection,
+  NetworkDevicesProjection,
 } from './cockpit-contract'
 import type { CockpitDestination } from './cockpit-destinations'
+import { DevicesDetail } from './network-devices'
+import type { OperatorReceipt } from './operator-contract'
 import { useCockpitDestinations } from './use-cockpit-destinations'
 
-export type CockpitDetail = 'fleet' | 'diagnostics' | 'bran'
+export type CockpitDetail = 'fleet' | 'diagnostics' | 'bran' | 'devices'
 
 const STATE_PRIORITY: Record<CockpitState, number> = {
   blocked: 0,
@@ -78,6 +81,7 @@ interface CockpitProps {
   fleet: FleetProjection
   diagnostics: DiagnosticsProjection
   branReadiness: BranReadinessProjection
+  networkDevices?: NetworkDevicesProjection | null
 }
 
 interface TrustSignal {
@@ -231,6 +235,7 @@ function buildExceptions({
   fleet,
   diagnostics,
   branReadiness,
+  networkDevices = null,
 }: CockpitProps): CockpitException[] {
   const exceptions: CockpitException[] = []
   const referenceMs = Math.max(
@@ -347,6 +352,34 @@ function buildExceptions({
       target: 'fleet',
     })
   }
+  if (networkDevices) {
+    const sourceSeverity = networkDevices.adapter.kind === 'off'
+      ? null
+      : asExceptionSeverity(networkDevices.source.state)
+    if (sourceSeverity && sourceSeverity !== 'degraded') {
+      exceptions.push({
+        id: 'network-devices:source',
+        severity: sourceSeverity,
+        title: `Network device source is ${networkDevices.source.state}`,
+        detail: networkDevices.source.diagnosticCodes.join(' · ').replaceAll('_', ' ') || 'Router evidence incomplete',
+        ageSecs: networkDevices.source.ageSecs,
+        scope: 3,
+        target: 'devices',
+      })
+    }
+    for (const device of networkDevices.devices) {
+      if (device.inventoryState !== 'provisional') continue
+      exceptions.push({
+        id: `network-device:${device.deviceId}`,
+        severity: 'attention',
+        title: `New device: ${device.name}`,
+        detail: `${device.observedHostname ?? 'no hostname'} · ${device.currentAddress ?? 'no address'} · ${device.connection}${device.flags.includes('randomized_mac') ? ' · randomized MAC' : ''}`,
+        ageSecs: device.lastSeenAgeSecs,
+        scope: 2,
+        target: 'devices',
+      })
+    }
+  }
   return exceptions.sort((left, right) =>
     EXCEPTION_PRIORITY[left.severity] - EXCEPTION_PRIORITY[right.severity]
     || right.scope - left.scope
@@ -358,11 +391,12 @@ export function CockpitExceptionDeck({
   fleet,
   diagnostics,
   branReadiness,
+  networkDevices = null,
   onOpen,
 }: CockpitProps & { onOpen: (detail: CockpitDetail) => void }) {
   const exceptions = useMemo(
-    () => buildExceptions({ fleet, diagnostics, branReadiness }),
-    [fleet, diagnostics, branReadiness],
+    () => buildExceptions({ fleet, diagnostics, branReadiness, networkDevices }),
+    [fleet, diagnostics, branReadiness, networkDevices],
   )
   return (
     <section
@@ -761,19 +795,40 @@ function BranDetail({ branReadiness }: { branReadiness: BranReadinessProjection 
   )
 }
 
+const DETAIL_HEADINGS: Record<CockpitDetail, string> = {
+  fleet: 'Fleet and handoffs',
+  diagnostics: 'Diagnostics',
+  bran: 'Bran source packs',
+  devices: 'Network devices',
+}
+
 export function CockpitDrillIn({
   fleet,
   diagnostics,
   branReadiness,
+  networkDevices = null,
   detail,
   onSelect,
   onClose,
+  canCommand = false,
+  onReceipt,
+  onReload,
 }: CockpitProps & {
   detail: CockpitDetail
   onSelect: (detail: CockpitDetail) => void
   onClose: () => void
+  canCommand?: boolean
+  onReceipt?: (receipt: OperatorReceipt) => void
+  onReload?: () => Promise<void> | void
 }) {
   const destinations = useCockpitDestinations()
+  const tabs: Array<[CockpitDetail, string]> = [
+    ['fleet', 'Fleet'],
+    ['diagnostics', 'Diagnostics'],
+    ['bran', 'Source packs'],
+    ...(networkDevices ? [['devices', 'Devices'] as [CockpitDetail, string]] : []),
+  ]
+  const targetSlugs = fleet.targets.map(target => target.slug)
   return (
     <section
       id="lugos-cockpit-details"
@@ -786,15 +841,11 @@ export function CockpitDrillIn({
             Bounded evidence
           </div>
           <h2 id="cockpit-detail-heading" className="mt-1 text-xs font-semibold text-foreground">
-            {detail === 'fleet' ? 'Fleet and handoffs' : detail === 'diagnostics' ? 'Diagnostics' : 'Bran source packs'}
+            {DETAIL_HEADINGS[detail]}
           </h2>
         </div>
         <div className="flex flex-wrap items-center gap-1" role="tablist" aria-label="Cockpit details">
-          {([
-            ['fleet', 'Fleet'],
-            ['diagnostics', 'Diagnostics'],
-            ['bran', 'Source packs'],
-          ] as const).map(([id, label]) => (
+          {tabs.map(([id, label]) => (
             <button
               key={id}
               type="button"
@@ -825,6 +876,20 @@ export function CockpitDrillIn({
           />
         )}
         {detail === 'bran' && <BranDetail branReadiness={branReadiness} />}
+        {detail === 'devices' && networkDevices && (
+          <DevicesDetail
+            networkDevices={networkDevices}
+            targetSlugs={targetSlugs}
+            canCommand={canCommand}
+            onReceipt={onReceipt}
+            onReload={onReload}
+          />
+        )}
+        {detail === 'devices' && !networkDevices && (
+          <div className="px-3 py-7 text-center text-xs text-muted-foreground">
+            The network device registry projection is not enabled on this operator API.
+          </div>
+        )}
       </div>
     </section>
   )
