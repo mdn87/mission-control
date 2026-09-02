@@ -16,6 +16,7 @@ import {
   CockpitTrustRail,
   type CockpitDetail,
 } from './cockpit-overview'
+import { DevicesDetail } from './network-devices'
 
 const STATUS_TONE: Record<SpatialStatus, string> = {
   active: 'border-cyan-400/70 bg-cyan-400/10 text-cyan-200 shadow-[0_0_22px_rgba(34,211,238,0.12)]',
@@ -435,6 +436,31 @@ export function LugosSpatialOverview() {
               onReceipt={receipt => setOperatorState(current => addOperatorReceipt(current, receipt))}
               onReload={reload}
             />
+          )}
+          {operatorState.networkDevices && cockpitDetail !== 'devices' && (
+            <section
+              id="lugos-network-devices"
+              className="rounded-xl border border-cyan-400/20 bg-card/90"
+              aria-labelledby="lugos-network-devices-heading"
+            >
+              <div className="border-b border-border px-3 py-3">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-cyan-400">
+                  Network device registry
+                </div>
+                <h2 id="lugos-network-devices-heading" className="mt-1 text-xs font-semibold text-foreground">
+                  Devices observed by the GL-B3000
+                </h2>
+              </div>
+              <div className="p-3 sm:p-4">
+                <DevicesDetail
+                  networkDevices={operatorState.networkDevices}
+                  targetSlugs={operatorState.fleet?.targets.map(target => target.slug) ?? []}
+                  canCommand={canCommand}
+                  onReceipt={receipt => setOperatorState(current => addOperatorReceipt(current, receipt))}
+                  onReload={reload}
+                />
+              </div>
+            </section>
           )}
           {selected && <DenseDetail entity={selected} runs={projection.runs} />}
         </div>
