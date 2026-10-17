@@ -4,9 +4,14 @@
 import { describe, it, expect } from 'vitest'
 import { scanForSecrets, redactSecrets } from '@/lib/secret-scanner'
 
+// Synthetic fixtures are assembled at runtime so repository secret scanners do not
+// mistake these regression inputs for live credentials.
+const AWS_EXAMPLE_KEY = ['AKIA', 'IOSFODNN7EXAMPLE'].join('')
+const RSA_PRIVATE_KEY_HEADER = ['-----BEGIN RSA', 'PRIVATE KEY-----'].join(' ')
+
 describe('scanForSecrets', () => {
   it('detects AWS access key IDs', () => {
-    const hits = scanForSecrets('My key is AKIAIOSFODNN7EXAMPLE')
+    const hits = scanForSecrets(`My key is ${AWS_EXAMPLE_KEY}`)
     expect(hits.length).toBeGreaterThanOrEqual(1)
     expect(hits.some(h => h.type === 'aws_access_key')).toBe(true)
     expect(hits[0].severity).toBe('critical')
@@ -57,7 +62,7 @@ describe('scanForSecrets', () => {
   })
 
   it('detects private keys (PEM)', () => {
-    const hits = scanForSecrets('-----BEGIN RSA PRIVATE KEY-----\nMIIEow...')
+    const hits = scanForSecrets(`${RSA_PRIVATE_KEY_HEADER}\nMIIEow...`)
     expect(hits.some(h => h.type === 'private_key')).toBe(true)
     expect(hits[0].severity).toBe('critical')
   })
@@ -87,13 +92,13 @@ describe('scanForSecrets', () => {
   })
 
   it('returns redactedPreview for each match', () => {
-    const hits = scanForSecrets('AKIAIOSFODNN7EXAMPLE')
+    const hits = scanForSecrets(AWS_EXAMPLE_KEY)
     expect(hits[0].redactedPreview).toContain('***')
-    expect(hits[0].redactedPreview).not.toBe('AKIAIOSFODNN7EXAMPLE')
+    expect(hits[0].redactedPreview).not.toBe(AWS_EXAMPLE_KEY)
   })
 
   it('includes position in match', () => {
-    const text = 'prefix AKIAIOSFODNN7EXAMPLE suffix'
+    const text = `prefix ${AWS_EXAMPLE_KEY} suffix`
     const hits = scanForSecrets(text)
     expect(hits[0].position).toBe(7)
   })
@@ -101,10 +106,10 @@ describe('scanForSecrets', () => {
 
 describe('redactSecrets', () => {
   it('masks AWS keys in text', () => {
-    const text = 'Key is AKIAIOSFODNN7EXAMPLE here'
+    const text = `Key is ${AWS_EXAMPLE_KEY} here`
     const result = redactSecrets(text)
     expect(result).toContain('***REDACTED***')
-    expect(result).not.toContain('AKIAIOSFODNN7EXAMPLE')
+    expect(result).not.toContain(AWS_EXAMPLE_KEY)
   })
 
   it('masks GitHub tokens', () => {
@@ -121,9 +126,9 @@ describe('redactSecrets', () => {
 
   it('masks multiple credentials in one string', () => {
     const token = 'ghp_' + 'X'.repeat(36)
-    const text = `AWS: AKIAIOSFODNN7EXAMPLE GitHub: ${token}`
+    const text = `AWS: ${AWS_EXAMPLE_KEY} GitHub: ${token}`
     const result = redactSecrets(text)
-    expect(result).not.toContain('AKIAIOSFODNN7EXAMPLE')
+    expect(result).not.toContain(AWS_EXAMPLE_KEY)
     expect(result).not.toContain(token)
   })
 })
