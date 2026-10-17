@@ -22,3 +22,13 @@ GET /api/lugos/events
 GET /api/lugos/model-budgets
 GET /api/lugos/snapshot
 POST /api/lugos/commands
+GET /api/lugos/lineage
+GET /api/lugos/lineage/list
+GET /api/lugos/project-snapshot
+POST /api/lugos/remote-decisions
+GET /api/lugos/remote-decisions/passkeys
+DELETE /api/lugos/remote-decisions/passkeys
+POST /api/lugos/remote-decisions/passkeys/register/options
+POST /api/lugos/remote-decisions/passkeys/register/verify
+POST /api/lugos/remote-decisions/step-up/options
+POST /api/lugos/remote-decisions/step-up/verify
