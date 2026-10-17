@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/api-client'
 import {
   operatorEventSchema,
   operatorResetSchema,
+  type OperatorEvent,
   type OperatorSnapshot,
 } from './operator-contract'
 import {
@@ -25,18 +26,37 @@ export function useLugosOperator() {
   const [streamState, setStreamState] = useState<LugosStreamState>('connecting')
   const [error, setError] = useState<string | null>(null)
   const streamCursor = useRef<string | null>(null)
+  // A superseded snapshot request has no effects; the latest one applies and
+  // replays only the stream events it has not seen (equality on cursors only).
+  const requestGeneration = useRef(0)
+  const overlap = useRef<{ cursorAtRequest: string | null, events: OperatorEvent[] } | null>(null)
+  const [streamGeneration, setStreamGeneration] = useState(0)
 
   const loadSnapshot = useCallback(async () => {
+    const generation = ++requestGeneration.current
+    overlap.current = { cursorAtRequest: streamCursor.current, events: [] }
     try {
       const snapshot = await apiFetch<OperatorSnapshot>('/api/lugos/snapshot')
-      const next = stateFromSnapshot(snapshot)
+      if (generation !== requestGeneration.current) return
+      let next = stateFromSnapshot(snapshot)
+      const { cursorAtRequest, events } = overlap.current ?? { cursorAtRequest: null, events: [] }
+      const seen = events.findIndex(event => event.cursor === next.cursor)
+      const fresher = next.cursor !== cursorAtRequest && seen === -1
+      const replay = next.cursor === cursorAtRequest
+        ? events
+        : fresher ? [] : events.slice(seen + 1)
+      for (const event of replay) next = applyOperatorEvent(next, event)
       streamCursor.current = next.cursor
+      overlap.current = null
       setOperatorState(next)
       setError(null)
+      if (fresher) setStreamGeneration(value => value + 1)
     } catch {
+      if (generation !== requestGeneration.current) return
+      overlap.current = null
       setError('Lugos operator snapshot is unavailable.')
     } finally {
-      setLoading(false)
+      if (generation === requestGeneration.current) setLoading(false)
     }
   }, [])
 
@@ -61,6 +81,7 @@ export function useLugosOperator() {
       try {
         const event = operatorEventSchema.parse(JSON.parse(message.data))
         streamCursor.current = event.cursor
+        overlap.current?.events.push(event)
         setOperatorState(current => applyOperatorEvent(current, event))
         setStreamState('live')
         setError(null)
@@ -74,6 +95,9 @@ export function useLugosOperator() {
         operatorResetSchema.parse(JSON.parse(message.data))
         source.close()
         setStreamState('connecting')
+        // The server has expired this cursor; reopening with it would only earn
+        // another reset. With no cursor the stream replays its whole ring.
+        streamCursor.current = null
         setLoading(true)
         void loadSnapshot()
       } catch {
@@ -86,7 +110,7 @@ export function useLugosOperator() {
     source.onopen = () => setStreamState('live')
     source.onerror = () => setStreamState('degraded')
     return () => source.close()
-  }, [loading, loadSnapshot])
+  }, [loading, loadSnapshot, streamGeneration])
 
   return {
     operatorState,
