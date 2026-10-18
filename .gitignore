@@ -61,3 +61,6 @@ docs/_*.png
 # rather than carried as divergence from upstream.
 .claude/worktrees/
 .claude/launch.json
+
+# Local dias agent state
+.dias/
