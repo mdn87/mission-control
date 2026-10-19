@@ -64,3 +64,4 @@ docs/_*.png
 
 # Local dias agent state
 .dias/
+/config/glas.local.json
