@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "projectId": "mission-control",
+  "projectLabel": "Mission Control",
+  "chips": [
+    {
+      "schemaVersion": 1,
+      "chipId": "mission-control:operator-cockpit-slices",
+      "projectId": "mission-control",
+      "title": "Ship the Lugos operator cockpit slices",
+      "summary": "Fleet overview, dense Lugos panel, spatial overview, source-linked task loop, and paid-model chat controls over the read-only Lugos projection boundary.",
+      "stage": "done",
+      "sequence": 10,
+      "prereqs": [],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "aheadOfPrereqs": null,
+      "timestamps": {
+        "createdAt": "2026-08-27T07:12:00.000Z",
+        "updatedAt": "2026-09-27T20:37:06.000Z"
+      },
+      "evidence": [
+        {
+          "entryId": "ev:4c1a2f9e0b71",
+          "at": "2026-09-27T20:37:06.000Z",
+          "kind": "created",
+          "message": "Backfilled from the merged operator-cockpit branch and the week-2 to week-4 sections of the operator integration doc; paid-model controls merged 2026-08-08."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "mission-control:close-torc-integration",
+      "projectId": "mission-control",
+      "title": "Close remaining TORC integration",
+      "summary": "Read-only TORC lineage tab plus rendering of accepted project snapshots, with TORC kept as the sole authority for provenance.",
+      "stage": "done",
+      "sequence": 20,
+      "prereqs": [
+        "mission-control:operator-cockpit-slices"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "aheadOfPrereqs": null,
+      "timestamps": {
+        "createdAt": "2026-08-27T07:12:00.000Z",
+        "updatedAt": "2026-09-27T20:37:06.000Z"
+      },
+      "evidence": [
+        {
+          "entryId": "ev:a90676a584bb",
+          "at": "2026-08-27T07:12:00.000Z",
+          "kind": "created",
+          "message": "Derived from the 2026-08-27 milestone report; operator review required before commit."
+        },
+        {
+          "entryId": "ev:7d3e5c218f04",
+          "at": "2026-09-27T20:37:06.000Z",
+          "kind": "stage-change",
+          "message": "Lineage tab merged 2026-08-09 and the project snapshot consumer merged 2026-08-16; the lugos unit suite passed 132 tests on 2026-09-27."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "mission-control:ingress-hardening-and-revocation",
+      "projectId": "mission-control",
+      "title": "Harden proxy ingress and user revocation",
+      "summary": "Trusted-peer proxy authentication, header-collision rejection, self-approval refusal, and a performable revocation procedure documented as a plan.",
+      "stage": "done",
+      "sequence": 30,
+      "prereqs": [],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "aheadOfPrereqs": null,
+      "timestamps": {
+        "createdAt": "2026-09-27T20:37:06.000Z",
+        "updatedAt": "2026-09-27T20:37:06.000Z"
+      },
+      "evidence": [
+        {
+          "entryId": "ev:e2b8f0a6c913",
+          "at": "2026-09-27T20:37:06.000Z",
+          "kind": "created",
+          "message": "Backfilled from the security and revocation merges of 2026-08-12 and 2026-08-13 and the dated user-revocation plan."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "mission-control:remote-decision-relay",
+      "projectId": "mission-control",
+      "title": "Land the signed remote decision relay",
+      "summary": "Disabled-by-default route, passkey-gated issuer, isolated signed queue, and TLS relay server for one human approve or deny decision. Host activation belongs to the parent service.",
+      "stage": "done",
+      "sequence": 40,
+      "prereqs": [
+        "mission-control:ingress-hardening-and-revocation"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "aheadOfPrereqs": null,
+      "timestamps": {
+        "createdAt": "2026-09-27T20:37:06.000Z",
+        "updatedAt": "2026-09-27T20:37:06.000Z"
+      },
+      "evidence": [
+        {
+          "entryId": "ev:91f4d7b3a2c5",
+          "at": "2026-09-27T20:37:06.000Z",
+          "kind": "created",
+          "message": "Relay scaffold, issuer, and credential permission fixes merged 2026-08-28 and 2026-08-29. All activation flags stay false in the repository."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "mission-control:network-devices-tab",
+      "projectId": "mission-control",
+      "title": "Add the network device registry cockpit tab",
+      "summary": "Devices tab and overview section over the read-only network device registry projection, with prefilled Add Device and Merge commands.",
+      "stage": "done",
+      "sequence": 50,
+      "prereqs": [
+        "mission-control:close-torc-integration"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "aheadOfPrereqs": null,
+      "timestamps": {
+        "createdAt": "2026-09-27T20:37:06.000Z",
+        "updatedAt": "2026-09-27T20:37:06.000Z"
+      },
+      "evidence": [
+        {
+          "entryId": "ev:5a0c3e8d17b6",
+          "at": "2026-09-27T20:37:06.000Z",
+          "kind": "created",
+          "message": "Two pull requests merged to the remote main on 2026-09-01 per the fetched log; the local clone is four commits behind and does not yet contain them."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "mission-control:verify-local-operation-guidance",
+      "projectId": "mission-control",
+      "title": "Verify local-operation guidance",
+      "summary": "Follow the documented local operation path on a clean or representative environment and correct gaps.",
+      "stage": "planned",
+      "sequence": 60,
+      "prereqs": [
+        "mission-control:remote-decision-relay"
+      ],
+      "linkedRunIds": [],
+      "confidence": "inferred",
+      "aheadOfPrereqs": null,
+      "timestamps": {
+        "createdAt": "2026-08-27T07:12:00.000Z",
+        "updatedAt": "2026-09-27T20:37:06.000Z"
+      },
+      "evidence": [
+        {
+          "entryId": "ev:9a7ae175d62f",
+          "at": "2026-08-27T07:12:00.000Z",
+          "kind": "created",
+          "message": "Derived from the 2026-08-27 milestone report; operator review required before commit."
+        },
+        {
+          "entryId": "ev:c6d19e4f2a80",
+          "at": "2026-09-27T20:37:06.000Z",
+          "kind": "note",
+          "message": "The start-locally section was corrected on 2026-08-24 to clone this fork; no clean-environment walkthrough has been recorded since."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "mission-control:run-everyday-operator-workflow",
+      "projectId": "mission-control",
+      "title": "Run the everyday operator workflow",
+      "summary": "Use Mission Control from project selection through snapshot review, device registry, and normal operator follow-through against a live Lugos projection.",
+      "stage": "ready",
+      "sequence": 70,
+      "prereqs": [
+        "mission-control:network-devices-tab"
+      ],
+      "linkedRunIds": [],
+      "confidence": "inferred",
+      "aheadOfPrereqs": null,
+      "timestamps": {
+        "createdAt": "2026-08-27T07:12:00.000Z",
+        "updatedAt": "2026-09-27T20:37:06.000Z"
+      },
+      "evidence": [
+        {
+          "entryId": "ev:5dff1bdb10ea",
+          "at": "2026-08-27T07:12:00.000Z",
+          "kind": "created",
+          "message": "Derived from the 2026-08-27 milestone report; operator review required before commit."
+        },
+        {
+          "entryId": "ev:3f8b6a1d9e27",
+          "at": "2026-09-27T20:37:06.000Z",
+          "kind": "stage-change",
+          "message": "Every rendering slice it depends on is merged; no recorded end-to-end run yet, so this is the next open step."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "mission-control:retain-workflow-evidence",
+      "projectId": "mission-control",
+      "title": "Retain workflow evidence",
+      "summary": "Record usability, lineage, failures, and operator decisions, then close or revise the milestone.",
+      "stage": "vague",
+      "sequence": 80,
+      "prereqs": [
+        "mission-control:run-everyday-operator-workflow",
+        "mission-control:verify-local-operation-guidance"
+      ],
+      "linkedRunIds": [],
+      "confidence": "unknown",
+      "aheadOfPrereqs": null,
+      "timestamps": {
+        "createdAt": "2026-08-27T07:12:00.000Z",
+        "updatedAt": "2026-09-27T20:37:06.000Z"
+      },
+      "evidence": [
+        {
+          "entryId": "ev:10fbd6e33f64",
+          "at": "2026-08-27T07:12:00.000Z",
+          "kind": "created",
+          "message": "Derived from the 2026-08-27 milestone report; operator review required before commit."
+        }
+      ]
+    }
+  ]
+}

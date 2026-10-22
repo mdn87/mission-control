@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "mission-control",
+  "projectLabel": "Mission Control",
+  "assessmentState": "scored",
+  "assessmentScope": "current-milestone",
+  "percentComplete": 90,
+  "milestonePhase": "operational-proof",
+  "portfolioGroup": "operator-surfaces",
+  "displayPriority": 500,
+  "assessedAt": "2026-09-27T20:37:06.000Z",
+  "confidence": "reported",
+  "currentMilestone": "Usable operator view over the Lugos projection: cockpit slices, TORC lineage, project snapshots, device registry tab, and the disabled-by-default remote decision relay are merged.",
+  "remainingSummary": "Run the everyday operator workflow end to end, walk the local-operation guidance on a clean environment, and record the evidence before closing the milestone.",
+  "nextChipId": "mission-control:run-everyday-operator-workflow",
+  "source": {
+    "label": "Repository review of commit history, lugos integration docs, and the passing lugos unit suite",
+    "updatedAt": "2026-09-27"
+  }
+}

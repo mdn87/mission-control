@@ -63,5 +63,7 @@ docs/_*.png
 .claude/launch.json
 
 # Local dias agent state
-.dias/
+/.dias/*
+!/.dias/chips.json
+!/.dias/status.json
 /config/glas.local.json
