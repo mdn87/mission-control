@@ -1,0 +1,6 @@
+# OSV-Scanner reads this file automatically for the pnpm-lock.yaml next to it.
+
+# Re-check when braces publishes 3.0.4 or later: npm view braces dist-tags.latest
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+reason = "braces 3.0.3 is the latest release, no fix exists; reached only via fast-glob in @next/eslint-plugin-next at lint time with repo-authored patterns"
