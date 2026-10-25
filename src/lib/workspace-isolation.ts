@@ -6,6 +6,7 @@ import { getDatabase, logAuditEvent } from '@/lib/db'
 import type { WorkspaceIsolation } from '@/lib/workspaces'
 
 export type UnscopedWorkspaceResource =
+  | 'ogmi_evidence'
   | 'agent_filesystem'
   | 'local_sessions'
   | 'gateway_sessions'

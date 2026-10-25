@@ -24,6 +24,37 @@ loopback boundary.
 Mission Control does not write these objects to SQLite. Its database continues
 to own only Mission Control users, roles, sessions, and local UI state.
 
+## OGMI evidence
+
+The **OGMI evidence** navigation item (`/ogmi`) reads a single configured run
+through `GET /api/lugos/ogmi`. It requires a viewer session and a shared workspace;
+strict workspaces are refused because the OGMI project has no workspace ownership.
+The backend runs OGMI's `read-projection-snapshot ... --json` command without a
+shell, with a ten-second timeout and a two-MiB output limit. No request parameter
+can select a filesystem path, executable, run or producer.
+
+Configure the server with OGMI 0.6.2 or later, which contains that command:
+
+```text
+LUGOS_OGMI_BIN=/absolute/path/to/ogmi
+LUGOS_OGMI_PROJECT=/absolute/path/to/trusted-project
+LUGOS_OGMI_SNAPSHOT=projections/current.json
+```
+
+The adjacent `current.json.artifact-ref.json` is required. Run the canonical OGMI
+projection refresh against an explicit run and artifact-writing producer first.
+Use a stable, trusted source package; refresh explicitly after its records change.
+The reader verifies exact snapshot bytes, producer binding, authority, semantic
+digest and source records, and returns the captured payload it verified. It does
+not authenticate authorship or fetch arbitrary artifact targets. Concurrently
+mutated source packages are outside this bounded read contract.
+
+The panel derives completion only from built-in completed/pending gates and shows
+recorded TORC review verdicts separately. Project claims keep their verification
+mode. Generation and verification timestamps are visible; a refresh failure clears
+the prior view. This path does not write OGMI records or create Mission Control
+tasks, and it leaves Autowork and mobile approvals untouched.
+
 ## Paid-model chat controls
 
 Chat defaults to the local RTX 3060 route. DeepSeek and Grok are operator-only,
