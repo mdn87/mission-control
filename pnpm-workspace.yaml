@@ -13,6 +13,9 @@ minimumReleaseAgeExclude:
   - '@next/*' # env/swc/eslint siblings; versions are exact-pinned by next itself
 
 overrides:
+  # @scalar/json-magic pins affected undici 7.29.1; 7.30.1 cleared the
+  # seven-day gate on 2026-10-22. Remove when Scalar's pin includes the fix.
+  undici@7: '>=7.30.1 <8'
   postcss@8: '>=8.5.18 <9'
   sharp: '>=0.35.0 <0.36.0'
   brace-expansion@1: '>=1.1.16 <2'
@@ -20,3 +23,10 @@ overrides:
   brace-expansion@5: '>=5.0.8 <6'
   ts-deepmerge: '>=8.0.0'
   eslint-plugin-react-hooks: ~7.0.1
+
+# The Scalar editor imports @lezer/common through this package, whose published
+# 6.3.0 manifest omits that runtime dependency. Keep the repair version-scoped.
+packageExtensions:
+  '@replit/codemirror-css-color-picker@6.3.0':
+    dependencies:
+      '@lezer/common': '^1.5.2'
