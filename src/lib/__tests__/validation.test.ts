@@ -19,6 +19,22 @@ import {
   openClawDoctorFixSchema,
 } from '@/lib/validation'
 
+describe('task collection limits', () => {
+  it.each([
+    ['create', createTaskSchema],
+    ['update', updateTaskSchema],
+  ] as const)('rejects oversized %s tags before collecting per-element errors', (_name, schema) => {
+    // Keep the regression bounded: one element above the real API limit is
+    // enough to distinguish early size rejection from parsing every element.
+    const result = schema.safeParse({ title: 'Task', tags: Array(51).fill(null) })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues).toHaveLength(1)
+      expect(result.error.issues[0]).toMatchObject({ code: 'too_big', path: ['tags'] })
+    }
+  })
+})
+
 describe('createTaskSchema', () => {
   it('accepts valid input with defaults', () => {
     const result = createTaskSchema.safeParse({ title: 'Fix bug' })
