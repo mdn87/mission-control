@@ -14,7 +14,7 @@ const API_KEY = ['test-api-key', 'e2e-12345'].join('-')
 /** Run mc-cli command via execFile (no shell) and return parsed JSON output */
 async function mc(...args: string[]): Promise<{ stdout: string; parsed: any; exitCode: number }> {
   try {
-    const { stdout } = await execFileAsync(process.execPath, [CLI, ...args, '--json', '--url', BASE_URL, '--api-key', API_KEY], {
+    const { stdout } = await execFileAsync(process.execPath, [CLI, ...args, '--json', '--url', BASE_URL], {
       timeout: 15000,
       env: { ...process.env, MC_URL: BASE_URL, MC_API_KEY: API_KEY },
     })
