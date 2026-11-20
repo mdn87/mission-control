@@ -26,19 +26,14 @@ The `posture.score` field (0-100) gives a quick posture assessment. The **Securi
 
 ### 1. Credentials
 
-**Generate strong credentials** using the included script:
-
-```bash
-bash scripts/generate-env.sh           # Generates .env with random secrets
-chmod 600 .env                          # Lock down permissions
-```
-
-The installer (`install.sh`) does this automatically. If you set up manually, ensure:
+Store each service credential in BWS and bind it through an ignored GLAS
+reference manifest before launching Mission Control. The installer requires
+this manifest and does not generate or print credentials. Ensure:
 
 - `AUTH_PASS` is 12+ characters, not a dictionary word
 - `API_KEY` is 32+ hex characters
 - `AUTH_SECRET` is a unique random string
-- `.env` file permissions are `600`
+- the GLAS profile can read the bound BWS entries
 
 ### 2. Network Access Control
 

@@ -17,7 +17,7 @@ pnpm build
 ```
 
 Secrets (AUTH_SECRET, API_KEY) auto-generate on first run if not set.
-Visit `http://localhost:3000/setup` to create an admin account, or set `AUTH_USER`/`AUTH_PASS` in `.env` for headless/CI seeding.
+Visit `http://localhost:3000/setup` to create an admin account. For headless seeding, bind `AUTH_USER`/`AUTH_PASS` through the GLAS manifest.
 
 ## Run
 

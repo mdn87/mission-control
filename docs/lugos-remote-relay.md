@@ -50,6 +50,13 @@ LUGOS_RELAY_ISSUER_ENABLED=false
 Setting one flag alone does not produce a working decision path. Repository code never
 auto-generates a key, queue file, CA, device credential, or public listener.
 
+If enabled, launch the relay with a separate GLAS/BWS manifest. Map
+`LUGOS_RELAY_INTERNAL_TOKEN`, `LUGOS_RELAY_TLS_KEY_PEM`, and
+`LUGOS_RELAY_SIGNING_KEY_PEM` to distinct BWS entries. The two PEM values are
+used in memory; the public TLS certificate, client CA, and device list remain
+files. The older `LUGOS_RELAY_TLS_KEY` and `LUGOS_RELAY_SIGNING_KEY` file-path
+options are rejected.
+
 ## First activation choices
 
 The reviewed first target uses `mc:user:<numeric-id>`, RP origin

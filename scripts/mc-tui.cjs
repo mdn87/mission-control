@@ -8,7 +8,7 @@
  - Auto-refresh dashboard
 
  Usage:
-   node scripts/mc-tui.cjs [--url <base>] [--api-key <key>] [--profile <name>] [--refresh <ms>]
+   node scripts/mc-tui.cjs [--url <base>] [--profile <name>] [--refresh <ms>]
 */
 
 const fs = require('node:fs');
@@ -41,8 +41,8 @@ function loadProfile(name) {
     const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
     return {
       url: parsed.url || process.env.MC_URL || 'http://127.0.0.1:3000',
-      apiKey: parsed.apiKey || process.env.MC_API_KEY || '',
-      cookie: parsed.cookie || process.env.MC_COOKIE || '',
+      apiKey: process.env.MC_API_KEY || '',
+      cookie: process.env.MC_COOKIE || '',
     };
   } catch {
     return {
@@ -728,7 +728,7 @@ async function main() {
     console.log(`Mission Control TUI
 
 Usage:
-  node scripts/mc-tui.cjs [--url <base>] [--api-key <key>] [--profile <name>] [--refresh <ms>]
+  node scripts/mc-tui.cjs [--url <base>] [--profile <name>] [--refresh <ms>]
 
 Keys (Dashboard):
   up/down     Navigate agents or tasks list
@@ -756,9 +756,10 @@ Keys (Agent Detail):
     process.exit(0);
   }
 
+  if (flags['api-key']) throw new Error('Use a GLAS-injected MC_API_KEY instead of --api-key.');
   const profile = loadProfile(String(flags.profile || 'default'));
   baseUrl = normalizeMissionControlBaseUrl(flags.url ? String(flags.url) : profile.url);
-  apiKey = flags['api-key'] ? String(flags['api-key']) : profile.apiKey;
+  apiKey = profile.apiKey;
   cookie = profile.cookie;
   refreshMs = Number(flags.refresh || 5000);
 

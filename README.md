@@ -30,6 +30,12 @@ the authority boundary, local preview, and verification commands.
 ## Start locally
 
 Node.js 22 or newer and pnpm are required for a source install.
+Configure a GLAS native-store profile and an ignored `config/glas.local.json`
+reference manifest before starting the app. Bind at least `AUTH_SECRET` and
+`API_KEY` to BWS entries; existing installations should keep their current
+values during migration. Set `GLAS_PYTHON` to the Python runtime with GLAS and
+Bitwarden support, `GLAS_ROOT` when using a source checkout, and `GLAS_HOME`
+to the selected profile inventory. See [deployment](docs/deployment.md).
 
 ```bash
 git clone https://github.com/mdn87/mission-control.git
@@ -50,27 +56,9 @@ pnpm dev
 
 Windows users can run `./install.ps1 -Mode local` in PowerShell.
 
-### Start with Docker
-
-```bash
-docker compose up
-```
-
-Or run the published multi-architecture image:
-
-```bash
-docker pull ghcr.io/builderz-labs/mission-control:latest
-docker run --rm -p 3000:3000 ghcr.io/builderz-labs/mission-control:latest
-```
-
-Use the hardened Compose overlay for a network-accessible deployment:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d
-```
-
-The [deployment guide](docs/deployment.md) covers persistent data, TLS termination,
-gateway connectivity, and standalone builds.
+The Docker installer is disabled until its service identity has a BWS-backed
+launch. The [deployment guide](docs/deployment.md) covers the supported local
+and standalone paths and their service credentials.
 
 ## What Mission Control governs
 
@@ -121,13 +109,16 @@ assuming feature parity.
 
 ## Connect an agent
 
-The shortest gateway-free loop uses the REST API. Export the URL and API key shown in
-Settings:
+The shortest gateway-free loop uses the REST API. Create the ignored
+`config/glas.cli.local.json` manifest described in [deployment](docs/deployment.md),
+then open a temporary GLAS-backed shell for the examples below:
 
 ```bash
+GLAS_MANIFEST=config/glas.cli.local.json python scripts/with-glas.py --exec bash
 export MC_URL=http://localhost:3000
-export MC_API_KEY=replace-with-your-api-key
 ```
+
+GLAS injects `MC_API_KEY` into that shell. Exit it when finished.
 
 Register an agent and create work:
 
@@ -165,9 +156,12 @@ pnpm mc events watch --types agent,task
 
 ```bash
 claude mcp add mission-control -- \
-  env MC_URL=http://127.0.0.1:3000 MC_API_KEY=replace-with-your-api-key \
-  node /absolute/path/to/mission-control/scripts/mc-mcp-server.cjs
+  python /absolute/path/to/mission-control/scripts/with-glas.py --exec \
+  node scripts/mc-mcp-server.cjs
 ```
+
+Create an ignored `config/glas.cli.local.json` manifest for the MCP client that
+maps a BWS entry to `MC_API_KEY`. The launcher selects it for this command.
 
 Use the [CLI and MCP reference](docs/cli-agent-control.md) for the current command and tool
 surface. The REST contract lives in [`openapi.json`](openapi.json). A running instance serves
@@ -245,15 +239,15 @@ REST ───┘                         SQLite + agent runtimes
 | Verification | Vitest, Playwright, ESLint, TypeScript, build, and API parity checks |
 
 Runtime data defaults to `.data/`. Set `MISSION_CONTROL_DATA_DIR` to an absolute persistent
-path for standalone deployments. The complete environment contract is in
-[`.env.example`](.env.example).
+path for standalone deployments. Credentialed launches use the BWS references
+described in [deployment](docs/deployment.md).
 
 ## Security boundary
 
 - Keep Mission Control on a trusted network unless a TLS reverse proxy and
   `MC_ALLOWED_HOSTS` are configured.
-- Replace or securely store generated credentials before broader access.
-- Use the hardened Compose overlay for production-like container deployments.
+- Supply authentication credentials through GLAS before broader access.
+- Use a GLAS-backed service identity before enabling containers in production.
 - Treat agent messages, skill packages, webhooks, and MCP content as untrusted input.
 - Report vulnerabilities through [SECURITY.md](SECURITY.md), not a public issue.
 

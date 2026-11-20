@@ -132,16 +132,10 @@ export const FIX_SAFETY: Record<string, FixSafety> = {
   env_permissions: 'safe',
   config_permissions: 'safe',
   world_writable: 'safe',
-  hsts_enabled: 'requires-restart',
-  cookie_secure: 'requires-restart',
-  allowed_hosts: 'requires-restart',
-  rate_limiting: 'requires-restart',
-  api_key_set: 'requires-restart',
   log_redaction: 'requires-restart',
   dm_isolation: 'requires-restart',
   fs_workspace_only: 'requires-restart',
   exec_restricted: 'requires-review',
-  gateway_auth: 'requires-review',
   gateway_bind: 'requires-review',
   elevated_disabled: 'requires-review',
   control_ui_device_auth: 'requires-review',
@@ -262,7 +256,7 @@ function scanCredentials(): Category {
     name: 'API key configured',
     status: apiKey && apiKey !== 'generate-a-random-key' ? 'pass' : 'fail',
     detail: !apiKey ? 'API_KEY is not set' : apiKey === 'generate-a-random-key' ? 'API_KEY uses the default placeholder' : 'API_KEY is configured',
-    fix: !apiKey || apiKey === 'generate-a-random-key' ? 'Run: bash scripts/generate-env.sh --force' : '',
+    fix: !apiKey || apiKey === 'generate-a-random-key' ? 'Add API_KEY to BWS and the GLAS manifest' : '',
     severity: 'critical',
   })
 
@@ -302,7 +296,7 @@ function scanNetwork(): Category {
     name: 'Host allowlist configured',
     status: allowAny === '1' || allowAny === 'true' ? 'fail' : allowedHosts ? 'pass' : 'warn',
     detail: allowAny === '1' || allowAny === 'true' ? 'MC_ALLOW_ANY_HOST is enabled — any host can connect' : allowedHosts ? `MC_ALLOWED_HOSTS: ${allowedHosts}` : 'MC_ALLOWED_HOSTS is not set',
-    fix: allowAny ? 'Remove MC_ALLOW_ANY_HOST and set MC_ALLOWED_HOSTS instead' : !allowedHosts ? 'Set MC_ALLOWED_HOSTS=localhost,127.0.0.1 in .env' : '',
+    fix: allowAny ? 'Remove MC_ALLOW_ANY_HOST and set MC_ALLOWED_HOSTS instead' : !allowedHosts ? 'Set MC_ALLOWED_HOSTS=localhost,127.0.0.1 in the service runtime configuration' : '',
     severity: 'high',
   })
 
@@ -312,7 +306,7 @@ function scanNetwork(): Category {
     name: 'HSTS enabled',
     status: hsts === '1' ? 'pass' : 'warn',
     detail: hsts === '1' ? 'Strict-Transport-Security header enabled' : 'HSTS is not enabled',
-    fix: hsts !== '1' ? 'Set MC_ENABLE_HSTS=1 in .env (requires HTTPS)' : '',
+    fix: hsts !== '1' ? 'Set MC_ENABLE_HSTS=1 in the service runtime configuration (requires HTTPS)' : '',
     severity: 'medium',
   })
 
@@ -322,7 +316,7 @@ function scanNetwork(): Category {
     name: 'Secure cookies',
     status: cookieSecure === '1' || cookieSecure === 'true' ? 'pass' : 'warn',
     detail: cookieSecure === '1' || cookieSecure === 'true' ? 'Cookies marked secure' : 'Cookies not explicitly set to secure',
-    fix: !(cookieSecure === '1' || cookieSecure === 'true') ? 'Set MC_COOKIE_SECURE=1 in .env (requires HTTPS)' : '',
+    fix: !(cookieSecure === '1' || cookieSecure === 'true') ? 'Set MC_COOKIE_SECURE=1 in the service runtime configuration (requires HTTPS)' : '',
     severity: 'medium',
   })
 
@@ -600,7 +594,7 @@ function scanRuntime(): Category {
     name: 'Rate limiting active',
     status: !rlDisabled ? 'pass' : 'fail',
     detail: rlDisabled ? 'Rate limiting is disabled' : 'Rate limiting is active',
-    fix: rlDisabled ? 'Remove MC_DISABLE_RATE_LIMIT from .env' : '',
+    fix: rlDisabled ? 'Remove MC_DISABLE_RATE_LIMIT from the service runtime configuration' : '',
     severity: 'high',
   })
 

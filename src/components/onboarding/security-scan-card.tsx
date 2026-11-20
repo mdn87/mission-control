@@ -58,11 +58,9 @@ function requestErrorMessage(error: unknown, fallback: string): string {
 // Check IDs that the /api/security-scan/fix endpoint can auto-fix, with safety levels
 const FIX_SAFETY: Record<string, FixSafety> = {
   env_permissions: 'safe', config_permissions: 'safe', world_writable: 'safe',
-  hsts_enabled: 'requires-restart', cookie_secure: 'requires-restart',
-  allowed_hosts: 'requires-restart', rate_limiting: 'requires-restart', api_key_set: 'requires-restart',
   log_redaction: 'requires-restart', dm_isolation: 'requires-restart',
   fs_workspace_only: 'requires-restart',
-  exec_restricted: 'requires-review', gateway_auth: 'requires-review',
+  exec_restricted: 'requires-review',
   gateway_bind: 'requires-review', elevated_disabled: 'requires-review',
   control_ui_device_auth: 'requires-review', control_ui_insecure_auth: 'requires-review',
 }

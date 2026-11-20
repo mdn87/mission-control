@@ -4,9 +4,9 @@ Get from zero to a working agent loop with nothing but Mission Control and `curl
 
 ## Prerequisites
 
-- Mission Control running (`pnpm dev` or Docker)
+- Mission Control running through GLAS (`pnpm dev`)
 - An admin account (visit `/setup` on first run)
-- Your API key (auto-generated on first run, shown in Settings)
+- A BWS API key bound through the Mission Control GLAS manifest
 
 ## Step 1: Start Mission Control
 
@@ -16,12 +16,15 @@ pnpm dev
 
 Open http://localhost:3000 and log in. If this is your first run, visit http://localhost:3000/setup to create your admin account.
 
-Your API key is displayed in **Settings > API Key**. Export it for the commands below:
+Create an ignored `config/glas.cli.local.json` manifest mapping your BWS API
+key to `MC_API_KEY`. Open a temporary GLAS-backed shell for the commands below:
 
 ```bash
+GLAS_MANIFEST=config/glas.cli.local.json python scripts/with-glas.py --exec bash
 export MC_URL=http://localhost:3000
-export MC_API_KEY=your-api-key
 ```
+
+GLAS injects the key into this shell; exit it after the examples.
 
 ## Step 2: Register an Agent
 

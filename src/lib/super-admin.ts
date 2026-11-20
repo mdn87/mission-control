@@ -1,14 +1,18 @@
 import { randomUUID } from 'crypto'
-import fs from 'fs'
 import path from 'path'
 import { getDatabase, appendProvisionEvent, logAuditEvent, Tenant, ProvisionJob } from './db'
 import { runCommand } from './command'
 import { runProvisionerCommand } from './provisioner-client'
-import { config as appConfig } from './config'
 
 export type TenantStatus = 'pending' | 'provisioning' | 'decommissioning' | 'active' | 'suspended' | 'error'
 export type ProvisionJobStatus = 'queued' | 'approved' | 'running' | 'completed' | 'failed' | 'rejected' | 'cancelled'
 export type ProvisionJobAction = 'approve' | 'reject' | 'cancel'
+
+function requireTenantGatewayEnrollment(): void {
+  throw new Error(
+    'Tenant gateway bootstrap requires per-tenant GLAS machine-account enrollment and BWS references; automated enrollment is not configured',
+  )
+}
 
 export interface TenantBootstrapRequest {
   slug: string
@@ -88,7 +92,6 @@ export function buildBootstrapPlan(tenant: {
   templateOpenclawJsonPath: string
   gatewaySystemdTemplatePath: string
 }): ProvisionStep[] {
-  const artifactDir = path.join(appConfig.dataDir, 'provisioner', tenant.slug)
   const homeDir = joinPosix(getTenantHomeRoot(), tenant.linux_user)
 
   return [
@@ -138,13 +141,6 @@ export function buildBootstrapPlan(tenant: {
       key: 'install-gateway-systemd-template',
       title: 'Install openclaw-gateway@.service template',
       command: ['/usr/bin/cp', '-n', opts.gatewaySystemdTemplatePath, '/etc/systemd/system/openclaw-gateway@.service'],
-      requires_root: true,
-      timeout_ms: 5000,
-    },
-    {
-      key: 'install-tenant-gateway-env',
-      title: 'Install tenant gateway env file',
-      command: ['/usr/bin/cp', '-f', `${artifactDir}/openclaw-gateway.env`, `/etc/openclaw-tenants/${tenant.linux_user}.env`],
       requires_root: true,
       timeout_ms: 5000,
     },
@@ -241,40 +237,6 @@ function parseJobRequest(job: any): { dry_run?: boolean } {
   return parseJsonField(raw, {})
 }
 
-function getProvisionArtifactDir(slug: string) {
-  return path.join(appConfig.dataDir, 'provisioner', slug)
-}
-
-function ensureProvisionArtifacts(job: any) {
-  const requestJson = parseJobRequest(job) as any
-  const slug = String(requestJson?.slug || job?.tenant_slug || '').trim()
-  const linuxUser = String(job?.linux_user || '').trim()
-  const openclawHome = String(job?.openclaw_home || '').trim()
-  const gatewayPort = Number(requestJson?.gateway_port ?? job?.gateway_port ?? 0)
-
-  if (!slug) throw new Error('Missing tenant slug for artifact generation')
-  if (!linuxUser) throw new Error('Missing linux_user for artifact generation')
-  if (!openclawHome) throw new Error('Missing openclaw_home for artifact generation')
-  if (!Number.isInteger(gatewayPort) || gatewayPort < 1024 || gatewayPort > 65535) {
-    throw new Error('Missing/invalid gateway_port for gateway unit provisioning')
-  }
-
-  const artifactDir = getProvisionArtifactDir(slug)
-  fs.mkdirSync(artifactDir, { recursive: true })
-
-  const gatewayEnv = [
-    `TENANT_SLUG=${slug}`,
-    `TENANT_USER=${linuxUser}`,
-    `OPENCLAW_HOME=${openclawHome}`,
-    `OPENCLAW_STATE_DIR=${openclawHome}`,
-    `OPENCLAW_CONFIG_PATH=${openclawHome}/openclaw.json`,
-    `OPENCLAW_GATEWAY_PORT=${gatewayPort}`,
-    '',
-  ].join('\n')
-
-  fs.writeFileSync(path.join(artifactDir, 'openclaw-gateway.env'), gatewayEnv, { mode: 0o600 })
-}
-
 export function listTenants() {
   const db = getDatabase()
   const rows = db.prepare(`
@@ -351,10 +313,12 @@ export function getProvisionJob(jobId: number) {
 }
 
 export function createTenantAndBootstrapJob(request: TenantBootstrapRequest, actor: string) {
+  requireTenantGatewayEnrollment()
   const db = getDatabase()
 
+  const configuredOpenclawHome = process.env.OPENCLAW_HOME
   const templateOpenclawJsonPath =
-    String(process.env.MC_SUPER_TEMPLATE_OPENCLAW_JSON || (process.env.OPENCLAW_HOME ? path.join(process.env.OPENCLAW_HOME, 'openclaw.json') : '')).trim()
+    String(process.env.MC_SUPER_TEMPLATE_OPENCLAW_JSON || (configuredOpenclawHome ? path.join(configuredOpenclawHome, 'openclaw.json') : '')).trim()
   if (!templateOpenclawJsonPath) {
     throw new Error('Missing OpenClaw template config. Set MC_SUPER_TEMPLATE_OPENCLAW_JSON to an openclaw.json to seed new tenants.')
   }
@@ -731,7 +695,7 @@ export async function executeProvisionJob(jobId: number, actor: string) {
   }
 
   if (jobType === 'bootstrap') {
-    ensureProvisionArtifacts(job)
+    requireTenantGatewayEnrollment()
   }
 
   db.prepare(`

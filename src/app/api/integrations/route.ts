@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { logAuditEvent } from '@/lib/db'
-import { config } from '@/lib/config'
 import { join } from 'path'
-import { readFile, writeFile, rename } from 'fs/promises'
 import { existsSync } from 'fs'
 import os from 'os'
 import { execFileSync } from 'child_process'
@@ -104,92 +102,21 @@ const CATEGORIES: Record<string, { label: string; order: number }> = {
 }
 
 // Vars that must never be written via this API
-const BLOCKED_VARS = new Set([
-  'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM', 'PWD', 'LOGNAME', 'HOSTNAME',
-])
-const BLOCKED_PREFIXES = ['LD_', 'DYLD_']
-
-// ---------------------------------------------------------------------------
-// .env parser  — preserves comments, blanks, and ordering
-// ---------------------------------------------------------------------------
-
-interface EnvLine {
-  type: 'comment' | 'blank' | 'var'
-  raw: string
-  key?: string
-  value?: string
-}
-
-function parseEnv(content: string): EnvLine[] {
-  const lines: EnvLine[] = []
-  for (const raw of content.split('\n')) {
-    const trimmed = raw.trim()
-    if (trimmed === '') {
-      lines.push({ type: 'blank', raw })
-    } else if (trimmed.startsWith('#')) {
-      lines.push({ type: 'comment', raw })
-    } else {
-      const eqIdx = raw.indexOf('=')
-      if (eqIdx > 0) {
-        const key = raw.slice(0, eqIdx).trim()
-        const value = raw.slice(eqIdx + 1).trim()
-        lines.push({ type: 'var', raw, key, value })
-      } else {
-        lines.push({ type: 'comment', raw }) // malformed line preserved as-is
-      }
-    }
-  }
-  return lines
-}
-
-function serializeEnv(lines: EnvLine[]): string {
-  return lines.map(l => {
-    if (l.type === 'var') return `${l.key}=${l.value}`
-    return l.raw
-  }).join('\n')
-}
-
-function getEnvPath(): string | null {
-  if (!config.openclawStateDir) return null
-  return join(config.openclawStateDir, '.env')
-}
-
-async function readEnvFile(): Promise<{ lines: EnvLine[]; raw: string } | null> {
-  const envPath = getEnvPath()
-  if (!envPath) return null
-  try {
-    const raw = await readFile(envPath, 'utf-8')
-    return { lines: parseEnv(raw), raw }
-  } catch (err: any) {
-    if (err.code === 'ENOENT') return { lines: [], raw: '' }
-    throw err
-  }
-}
-
-async function writeEnvFile(lines: EnvLine[]): Promise<void> {
-  const envPath = getEnvPath()!
-  const tmpPath = envPath + '.tmp'
-  const content = serializeEnv(lines)
-  await writeFile(tmpPath, content, 'utf-8')
-  await rename(tmpPath, envPath)
-}
-
 function redactValue(value: string): string {
   if (value.length <= 4) return '****'
   return '****' + value.slice(-4)
 }
 
-function isVarBlocked(key: string): boolean {
-  if (BLOCKED_VARS.has(key)) return true
-  return BLOCKED_PREFIXES.some(p => key.startsWith(p))
+function getEffectiveEnvValue(envMap: Map<string, string>, key: string): string {
+  return envMap.get(key) || ''
 }
 
-function getEffectiveEnvValue(envMap: Map<string, string>, key: string): string {
-  const fromFile = envMap.get(key)
-  if (typeof fromFile === 'string' && fromFile.length > 0) return fromFile
-  const fromProcess = process.env[key]
-  if (typeof fromProcess === 'string' && fromProcess.length > 0) return fromProcess
-  return ''
+function processEnvironmentSnapshot(): Map<string, string> {
+  const values = new Map<string, string>()
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === 'string') values.set(key, value)
+  }
+  return values
 }
 
 function isPathLikeEnvVar(key: string): boolean {
@@ -263,7 +190,7 @@ async function getIntegrationProbeSnapshot(): Promise<IntegrationProbeSnapshot> 
   }
 
   const value: IntegrationProbeSnapshot = {
-    opAvailable: checkOpAvailable(),
+    opAvailable: false,
     xint: checkXintState(),
     ollamaInstalled: checkCommandAvailable('ollama'),
     ollamaReachable: await checkOllamaReachable(),
@@ -283,28 +210,6 @@ function checkOpAvailable(): boolean {
   }
 }
 
-/**
- * Build env for op CLI. The OP_SERVICE_ACCOUNT_TOKEN may live in the
- * OpenClaw .env (not the MC .env that systemd loads). Read it at
- * runtime so the op CLI can authenticate.
- */
-async function getOpEnv(): Promise<NodeJS.ProcessEnv> {
-  const base: NodeJS.ProcessEnv = { ...process.env }
-  // Already in process env? Use it.
-  if (base.OP_SERVICE_ACCOUNT_TOKEN) return base
-  // Try reading from the OpenClaw .env
-  const envData = await readEnvFile()
-  if (envData) {
-    for (const line of envData.lines) {
-      if (line.type === 'var' && line.key === 'OP_SERVICE_ACCOUNT_TOKEN' && line.value) {
-        base.OP_SERVICE_ACCOUNT_TOKEN = line.value
-        break
-      }
-    }
-  }
-  return base
-}
-
 // ---------------------------------------------------------------------------
 // GET /api/integrations — list all integrations with status + redacted values
 // ---------------------------------------------------------------------------
@@ -315,17 +220,7 @@ export async function GET(request: NextRequest) {
   const isolationDeny = denyUnscopedResourceForStrictWorkspace(auth.user, 'runtime_configuration', new URL(request.url).pathname)
   if (isolationDeny) return isolationDeny
 
-  const envData = await readEnvFile()
-  if (!envData) {
-    return NextResponse.json({ error: 'OPENCLAW_STATE_DIR not configured' }, { status: 404 })
-  }
-
-  const envMap = new Map<string, string>()
-  for (const line of envData.lines) {
-    if (line.type === 'var' && line.key) {
-      envMap.set(line.key, line.value!)
-    }
-  }
+  const envMap = processEnvironmentSnapshot()
 
   const probe = await getIntegrationProbeSnapshot()
   const { opAvailable, xint, ollamaInstalled, ollamaReachable, gwsInstalled } = probe
@@ -460,7 +355,7 @@ export async function GET(request: NextRequest) {
       .sort(([, a], [, b]) => a.order - b.order)
       .map(([id, meta]) => ({ id, label: meta.label })),
     opAvailable,
-    envPath: getEnvPath(),
+    envPath: null,
   })
 }
 
@@ -474,114 +369,15 @@ export async function PUT(request: NextRequest) {
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
   const isolationDeny = denyUnscopedResourceForStrictWorkspace(auth.user, 'runtime_configuration', new URL(request.url).pathname)
   if (isolationDeny) return isolationDeny
-
-  const body = await request.json().catch(() => null)
-  if (!body?.vars || typeof body.vars !== 'object') {
-    return NextResponse.json({ error: 'vars object required' }, { status: 400 })
-  }
-
-  for (const key of Object.keys(body.vars)) {
-    if (isVarBlocked(key)) {
-      return NextResponse.json({ error: `Cannot set protected variable: ${key}` }, { status: 403 })
-    }
-    if (!/^[A-Z_][A-Z0-9_]*$/i.test(key)) {
-      return NextResponse.json({ error: `Invalid variable name: ${key}` }, { status: 400 })
-    }
-  }
-
-  const envData = await readEnvFile()
-  if (!envData) {
-    return NextResponse.json({ error: 'OPENCLAW_STATE_DIR not configured' }, { status: 404 })
-  }
-
-  const { lines } = envData
-  const updatedKeys: string[] = []
-
-  for (const [key, value] of Object.entries(body.vars)) {
-    const strValue = String(value)
-    const existing = lines.find(l => l.type === 'var' && l.key === key)
-
-    if (existing) {
-      existing.value = strValue
-    } else {
-      if (lines.length > 0 && lines[lines.length - 1].type !== 'blank') {
-        lines.push({ type: 'blank', raw: '' })
-      }
-      lines.push({ type: 'var', raw: `${key}=${strValue}`, key, value: strValue })
-    }
-    updatedKeys.push(key)
-  }
-
-  await writeEnvFile(lines)
-
-  const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
-  logAuditEvent({
-    action: 'integrations_update',
-    actor: auth.user.username,
-    actor_id: auth.user.id,
-    detail: { updated_keys: updatedKeys },
-    ip_address: ipAddress,
-  })
-
-  return NextResponse.json({ updated: updatedKeys, count: updatedKeys.length })
+  return NextResponse.json({ error: 'Configure integration credentials in BWS and the GLAS manifest' }, { status: 409 })
 }
-
-// ---------------------------------------------------------------------------
-// DELETE /api/integrations?keys=KEY1,KEY2 — remove env vars
-// ---------------------------------------------------------------------------
 
 export async function DELETE(request: NextRequest) {
   const auth = requireRole(request, 'admin')
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
   const isolationDeny = denyUnscopedResourceForStrictWorkspace(auth.user, 'runtime_configuration', new URL(request.url).pathname)
   if (isolationDeny) return isolationDeny
-
-  let body: any
-  try { body = await request.json() } catch { return NextResponse.json({ error: 'Request body required' }, { status: 400 }) }
-  const keysParam = Array.isArray(body.keys) ? body.keys.join(',') : body.keys
-  if (!keysParam) {
-    return NextResponse.json({ error: 'keys parameter required (comma-separated string or array)' }, { status: 400 })
-  }
-
-  const keysToRemove = new Set<string>(keysParam.split(',').map((k: string) => k.trim()).filter(Boolean))
-  if (keysToRemove.size === 0) {
-    return NextResponse.json({ error: 'At least one key required' }, { status: 400 })
-  }
-
-  for (const key of keysToRemove) {
-    if (isVarBlocked(key)) {
-      return NextResponse.json({ error: `Cannot remove protected variable: ${key}` }, { status: 403 })
-    }
-  }
-
-  const envData = await readEnvFile()
-  if (!envData) {
-    return NextResponse.json({ error: 'OPENCLAW_STATE_DIR not configured' }, { status: 404 })
-  }
-
-  const removed: string[] = []
-  const newLines = envData.lines.filter(l => {
-    if (l.type === 'var' && l.key && keysToRemove.has(l.key)) {
-      removed.push(l.key)
-      return false
-    }
-    return true
-  })
-
-  if (removed.length > 0) {
-    await writeEnvFile(newLines)
-  }
-
-  const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
-  logAuditEvent({
-    action: 'integrations_remove',
-    actor: auth.user.username,
-    actor_id: auth.user.id,
-    detail: { removed_keys: removed },
-    ip_address: ipAddress,
-  })
-
-  return NextResponse.json({ removed, count: removed.length })
+  return NextResponse.json({ error: 'Remove integration bindings from GLAS and BWS' }, { status: 409 })
 }
 
 // ---------------------------------------------------------------------------
@@ -594,52 +390,17 @@ export async function POST(request: NextRequest) {
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
   const isolationDeny = denyUnscopedResourceForStrictWorkspace(auth.user, 'runtime_configuration', new URL(request.url).pathname)
   if (isolationDeny) return isolationDeny
-
   const rateCheck = mutationLimiter(request)
   if (rateCheck) return rateCheck
-
   const result = await validateBody(request, integrationActionSchema)
   if ('error' in result) return result.error
   const body = result.data
-
-  // pull-all is a batch action — no integrationId needed
-  if (body.action === 'pull-all') {
-    return handlePullAll(request, auth.user, body.category)
+  if (body.action !== 'test') {
+    return NextResponse.json({ error: 'Configure integration credentials in BWS and the GLAS manifest' }, { status: 409 })
   }
-
-  if (!body.integrationId) {
-    return NextResponse.json({ error: 'integrationId required' }, { status: 400 })
-  }
-
-  let integration: IntegrationDef | undefined = INTEGRATIONS.find(i => i.id === body.integrationId)
-  if (!integration) {
-    // Check plugin integrations
-    const pi = getPluginIntegrations().find(i => i.id === body.integrationId)
-    if (pi) {
-      integration = {
-        id: pi.id,
-        name: pi.name,
-        category: pi.category,
-        envVars: pi.envVars,
-        vaultItem: pi.vaultItem,
-        testable: pi.testable,
-        recommendation: pi.recommendation,
-      }
-    }
-  }
-  if (!integration) {
-    return NextResponse.json({ error: `Unknown integration: ${body.integrationId}` }, { status: 404 })
-  }
-
-  if (body.action === 'test') {
-    return handleTest(integration, request, auth.user)
-  }
-
-  if (body.action === 'pull') {
-    return handlePull(integration, request, auth.user)
-  }
-
-  return NextResponse.json({ error: `Unknown action: ${body.action}` }, { status: 400 })
+  const integration = INTEGRATIONS.find(i => i.id === body.integrationId)
+  if (!integration) return NextResponse.json({ error: 'Unknown integration' }, { status: 404 })
+  return handleTest(integration, request, auth.user)
 }
 
 // ---------------------------------------------------------------------------
@@ -655,15 +416,7 @@ async function handleTest(
     return NextResponse.json({ error: 'This integration does not support testing' }, { status: 400 })
   }
 
-  const envData = await readEnvFile()
-  if (!envData) {
-    return NextResponse.json({ error: 'OPENCLAW_STATE_DIR not configured' }, { status: 404 })
-  }
-
-  const envMap = new Map<string, string>()
-  for (const line of envData.lines) {
-    if (line.type === 'var' && line.key) envMap.set(line.key, line.value!)
-  }
+  const envMap = processEnvironmentSnapshot()
 
   try {
     let result: { ok: boolean; detail: string }
@@ -837,192 +590,4 @@ async function handleTest(
   } catch (err: any) {
     return NextResponse.json({ ok: false, detail: err.message || 'Connection failed' })
   }
-}
-
-// ---------------------------------------------------------------------------
-// Pull value from 1Password vault — uses execFileSync (no shell) for safety
-// ---------------------------------------------------------------------------
-
-async function handlePull(
-  integration: IntegrationDef,
-  request: NextRequest,
-  user: { username: string; id: number }
-) {
-  if (!integration.vaultItem) {
-    return NextResponse.json({ error: 'No vault item configured for this integration' }, { status: 400 })
-  }
-
-  if (!checkOpAvailable()) {
-    return NextResponse.json({ error: '1Password CLI (op) is not installed' }, { status: 400 })
-  }
-
-  try {
-    const opEnv = await getOpEnv()
-    if (!opEnv.OP_SERVICE_ACCOUNT_TOKEN) {
-      return NextResponse.json({ error: 'OP_SERVICE_ACCOUNT_TOKEN not found in environment or .env' }, { status: 400 })
-    }
-
-    // execFileSync passes args as array — no shell interpolation possible
-    const secret = execFileSync('op', [
-      'item', 'get', integration.vaultItem,
-      '--vault', process.env.OP_VAULT_NAME || 'default',
-      '--fields', 'password',
-      '--format', 'json',
-    ], { timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'], env: opEnv }).toString().trim()
-
-    let value: string
-    try {
-      const parsed = JSON.parse(secret)
-      value = parsed.value || parsed
-    } catch {
-      value = secret
-    }
-
-    if (!value || value.length === 0) {
-      return NextResponse.json({ error: 'Empty value returned from 1Password' }, { status: 400 })
-    }
-
-    // Write to .env
-    const envData = await readEnvFile()
-    if (!envData) {
-      return NextResponse.json({ error: 'OPENCLAW_STATE_DIR not configured' }, { status: 404 })
-    }
-
-    const { lines } = envData
-    const envVar = integration.envVars[0]
-
-    const existing = lines.find(l => l.type === 'var' && l.key === envVar)
-    if (existing) {
-      existing.value = value
-    } else {
-      if (lines.length > 0 && lines[lines.length - 1].type !== 'blank') {
-        lines.push({ type: 'blank', raw: '' })
-      }
-      lines.push({ type: 'var', raw: `${envVar}=${value}`, key: envVar, value })
-    }
-
-    await writeEnvFile(lines)
-
-    const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
-    logAuditEvent({
-      action: 'integration_pull_1password',
-      actor: user.username,
-      actor_id: user.id,
-      detail: { integration: integration.id, env_var: envVar },
-      ip_address: ipAddress,
-    })
-
-    return NextResponse.json({
-      ok: true,
-      detail: `Pulled ${envVar} from 1Password`,
-      redacted: redactValue(value),
-    })
-  } catch (err: any) {
-    return NextResponse.json({
-      error: `1Password pull failed: ${err.message}`,
-    }, { status: 500 })
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Pull ALL vault-backed integrations from 1Password (optionally by category)
-// ---------------------------------------------------------------------------
-
-async function handlePullAll(
-  request: NextRequest,
-  user: { username: string; id: number },
-  category?: string,
-) {
-  if (!checkOpAvailable()) {
-    return NextResponse.json({ error: '1Password CLI (op) is not installed' }, { status: 400 })
-  }
-
-  const opEnv = await getOpEnv()
-  if (!opEnv.OP_SERVICE_ACCOUNT_TOKEN) {
-    return NextResponse.json({ error: 'OP_SERVICE_ACCOUNT_TOKEN not found in environment or .env' }, { status: 400 })
-  }
-
-  const targets = INTEGRATIONS.filter(i => {
-    if (!i.vaultItem) return false
-    if (category && i.category !== category) return false
-    return true
-  })
-
-  if (targets.length === 0) {
-    return NextResponse.json({ error: 'No vault-backed integrations found for this category' }, { status: 400 })
-  }
-
-  const envData = await readEnvFile()
-  if (!envData) {
-    return NextResponse.json({ error: 'OPENCLAW_STATE_DIR not configured' }, { status: 404 })
-  }
-
-  const { lines } = envData
-  const results: { id: string; envVar: string; ok: boolean; detail: string }[] = []
-
-  for (const integration of targets) {
-    const envVar = integration.envVars[0]
-    try {
-      const secret = execFileSync('op', [
-        'item', 'get', integration.vaultItem!,
-        '--vault', process.env.OP_VAULT_NAME || 'default',
-        '--fields', 'password',
-        '--format', 'json',
-      ], { timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'], env: opEnv }).toString().trim()
-
-      let value: string
-      try {
-        const parsed = JSON.parse(secret)
-        value = parsed.value || parsed
-      } catch {
-        value = secret
-      }
-
-      if (!value || value.length === 0) {
-        results.push({ id: integration.id, envVar, ok: false, detail: 'Empty value' })
-        continue
-      }
-
-      // Upsert into lines
-      const existing = lines.find(l => l.type === 'var' && l.key === envVar)
-      if (existing) {
-        existing.value = value
-      } else {
-        if (lines.length > 0 && lines[lines.length - 1].type !== 'blank') {
-          lines.push({ type: 'blank', raw: '' })
-        }
-        lines.push({ type: 'var', raw: `${envVar}=${value}`, key: envVar, value })
-      }
-
-      results.push({ id: integration.id, envVar, ok: true, detail: `Pulled ${envVar}` })
-    } catch (err: any) {
-      results.push({ id: integration.id, envVar, ok: false, detail: err.message || 'Failed' })
-    }
-  }
-
-  // Write .env once after all pulls
-  const successCount = results.filter(r => r.ok).length
-  if (successCount > 0) {
-    await writeEnvFile(lines)
-  }
-
-  const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
-  logAuditEvent({
-    action: 'integration_pull_all_1password',
-    actor: user.username,
-    actor_id: user.id,
-    detail: {
-      category: category ?? 'all',
-      success: successCount,
-      failed: results.length - successCount,
-      results: results.map(r => ({ id: r.id, ok: r.ok })),
-    },
-    ip_address: ipAddress,
-  })
-
-  return NextResponse.json({
-    ok: successCount > 0,
-    detail: `Pulled ${successCount}/${results.length} integrations`,
-    results,
-  })
 }

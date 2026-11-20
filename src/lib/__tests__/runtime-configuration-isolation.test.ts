@@ -32,9 +32,9 @@ describe('deployment runtime configuration isolation', () => {
   it('guards integration reads and mutations before probes, parsing, or limiting', () => {
     const source = readFileSync(join(process.cwd(), 'src/app/api/integrations/route.ts'), 'utf8')
 
-    expectGuardBefore(source, 'GET', 'readEnvFile()')
-    expectGuardBefore(source, 'PUT', 'request.json()')
-    expectGuardBefore(source, 'DELETE', 'request.json()')
+    expectGuardBefore(source, 'GET', 'getIntegrationProbeSnapshot()')
+    expectGuardBefore(source, 'PUT', 'Configure integration credentials')
+    expectGuardBefore(source, 'DELETE', 'Remove integration bindings')
     expectGuardBefore(source, 'POST', 'mutationLimiter(request)')
   })
 })

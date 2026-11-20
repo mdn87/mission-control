@@ -49,7 +49,7 @@ Usage:
   mc <group> <action> [--flags]
 
 Groups:
-  auth         login/logout/whoami
+  auth         logout/whoami
   agents       list/get/create/update/delete/wake/diagnostics/heartbeat
                memory get|set|clear / soul get|set|templates / attribution
   tasks        list/get/create/update/delete/queue
@@ -67,7 +67,7 @@ Groups:
 Common flags:
   --profile <name>      profile name (default: default)
   --url <base_url>      override profile URL
-  --api-key <key>       override profile API key
+  Authentication keys come from a GLAS launch, not command-line flags or profiles.
   --json                JSON output
   --timeout-ms <n>      request timeout (default 20000)
   --help                show help
@@ -92,10 +92,6 @@ function profilePath(name) {
   return path.join(os.homedir(), '.mission-control', 'profiles', `${name}.json`);
 }
 
-function ensureParentDir(filePath) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-}
-
 function loadProfile(name) {
   const p = profilePath(name);
   if (!fs.existsSync(p)) {
@@ -111,8 +107,8 @@ function loadProfile(name) {
     return {
       name,
       url: parsed.url || process.env.MC_URL || 'http://127.0.0.1:3000',
-      apiKey: parsed.apiKey || process.env.MC_API_KEY || '',
-      cookie: parsed.cookie || process.env.MC_COOKIE || '',
+      apiKey: process.env.MC_API_KEY || '',
+      cookie: process.env.MC_COOKIE || '',
     };
   } catch {
     return {
@@ -122,12 +118,6 @@ function loadProfile(name) {
       cookie: process.env.MC_COOKIE || '',
     };
   }
-}
-
-function saveProfile(profile) {
-  const p = profilePath(profile.name);
-  ensureParentDir(p);
-  fs.writeFileSync(p, `${JSON.stringify(profile, null, 2)}\n`, 'utf8');
 }
 
 function mapStatusToExit(status) {
@@ -287,31 +277,13 @@ function printResult(result, asJson) {
 const commands = {
   auth: {
     async login(flags, ctx) {
-      const username = required(flags, 'username');
-      const password = required(flags, 'password');
-      const result = await httpRequest({
-        baseUrl: ctx.baseUrl,
-        method: 'POST',
-        route: '/api/auth/login',
-        body: { username, password },
-        timeoutMs: ctx.timeoutMs,
-      });
-      if (result.ok && result.setCookie) {
-        ctx.profile.url = ctx.baseUrl;
-        ctx.profile.cookie = result.setCookie.split(';')[0];
-        if (ctx.apiKey) ctx.profile.apiKey = ctx.apiKey;
-        saveProfile(ctx.profile);
-        result.data = { ...result.data, profile: ctx.profile.name, saved_cookie: true };
-      }
-      return result;
+      void flags;
+      void ctx;
+      throw new Error('CLI login is disabled. Launch the CLI with a GLAS-injected MC_API_KEY.');
     },
     async logout(flags, ctx) {
-      const result = await httpRequest({ baseUrl: ctx.baseUrl, apiKey: ctx.apiKey, cookie: ctx.profile.cookie, method: 'POST', route: '/api/auth/logout', timeoutMs: ctx.timeoutMs });
-      if (result.ok) {
-        ctx.profile.cookie = '';
-        saveProfile(ctx.profile);
-      }
-      return result;
+      void flags;
+      return httpRequest({ baseUrl: ctx.baseUrl, apiKey: ctx.apiKey, cookie: ctx.profile.cookie, method: 'POST', route: '/api/auth/logout', timeoutMs: ctx.timeoutMs });
     },
     whoami: () => ({ method: 'GET', route: '/api/auth/me' }),
   },
@@ -641,10 +613,15 @@ async function run() {
   }
 
   const asJson = Boolean(parsed.flags.json);
+  if (parsed.flags['api-key']) {
+    console.error('Use a GLAS-injected MC_API_KEY instead of --api-key.');
+    process.exitCode = EXIT.USAGE;
+    return;
+  }
   const profileName = String(parsed.flags.profile || 'default');
   const profile = loadProfile(profileName);
   const baseUrlInput = parsed.flags.url ? String(parsed.flags.url) : profile.url;
-  const apiKey = parsed.flags['api-key'] ? String(parsed.flags['api-key']) : profile.apiKey;
+  const apiKey = profile.apiKey;
   const timeoutMs = Number(parsed.flags['timeout-ms'] || 20000);
 
   const group = parsed._[0];

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { existsSync, readFileSync, writeFileSync, chmodSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, chmodSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
-import crypto from 'node:crypto'
 import { requireRole } from '@/lib/auth'
 import { config } from '@/lib/config'
 import { getDatabase } from '@/lib/db'
@@ -25,38 +24,6 @@ const fixRequestSchema = z.object({
     z.string().min(1).max(128).refine((id) => id in FIX_SAFETY, 'Unknown security check id'),
   ).min(1).max(50).optional(),
 }).strict()
-
-function shouldMutateRuntimeEnv() {
-  return process.env.MISSION_CONTROL_TEST_MODE !== '1'
-}
-
-function normalizeHostname(raw: string): string {
-  return raw.trim().replace(/^\[|\]$/g, '').split(':')[0].replace(/\.$/, '').toLowerCase()
-}
-
-function parseForwardedHost(forwarded: string | null): string[] {
-  if (!forwarded) return []
-  const hosts: string[] = []
-  for (const part of forwarded.split(',')) {
-    const match = /(?:^|;)\s*host="?([^";]+)"?/i.exec(part)
-    if (match?.[1]) hosts.push(match[1])
-  }
-  return hosts
-}
-
-function getRequestHostCandidates(request: NextRequest): string[] {
-  const rawCandidates = [
-    ...(request.headers.get('x-forwarded-host') || '').split(','),
-    ...(request.headers.get('x-original-host') || '').split(','),
-    ...(request.headers.get('x-forwarded-server') || '').split(','),
-    ...parseForwardedHost(request.headers.get('forwarded')),
-    request.headers.get('host') || '',
-    request.nextUrl.host || '',
-    request.nextUrl.hostname || '',
-  ]
-
-  return [...new Set(rawCandidates.map(normalizeHostname).filter(Boolean))]
-}
 
 function getFailingChecks() {
   return Object.values(runSecurityScan().categories)
@@ -81,54 +48,8 @@ export async function POST(request: NextRequest) {
   const shouldFix = (id: string) => !targetIds || targetIds.has(id)
 
   const results: FixResult[] = []
-  const envPaths = [
-    path.join(process.cwd(), '.env'),
-    path.join(process.cwd(), '.env.local'),
-  ]
-
-  function readEnv(filePath: string): string {
-    try { return readFileSync(filePath, 'utf-8') } catch { return '' }
-  }
-
-  function setEnvVar(key: string, value: string) {
-    let targetPath = envPaths[0]
-    for (const filePath of envPaths) {
-      const content = readEnv(filePath)
-      if (new RegExp(`^${key}=.*$`, 'm').test(content)) {
-        targetPath = filePath
-        break
-      }
-    }
-
-    let content = readEnv(targetPath)
-    const regex = new RegExp(`^${key}=.*$`, 'm')
-    if (regex.test(content)) {
-      content = content.replace(regex, `${key}=${value}`)
-    } else {
-      content = content.trimEnd() + `\n${key}=${value}\n`
-    }
-    writeFileSync(targetPath, content, 'utf-8')
-    if (shouldMutateRuntimeEnv()) {
-      process.env[key] = value
-    }
-  }
-
-  function unsetEnvVar(key: string) {
-    const regex = new RegExp(`^${key}=.*\n?`, 'm')
-    for (const filePath of envPaths) {
-      let content = readEnv(filePath)
-      if (regex.test(content)) {
-        content = content.replace(regex, '')
-        writeFileSync(filePath, content, 'utf-8')
-      }
-    }
-    if (shouldMutateRuntimeEnv()) {
-      delete process.env[key]
-    }
-  }
-
   // 1. Fix .env file permissions
-  const envPath = envPaths[0]
+  const envPath = path.join(process.cwd(), '.env')
   if (shouldFix('env_permissions') && existsSync(envPath)) {
     try {
       const stat = statSync(envPath)
@@ -144,74 +65,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 2. Fix MC_ALLOWED_HOSTS if not set
-  const allowedHosts = (process.env.MC_ALLOWED_HOSTS || '').trim()
-  const allowAny = process.env.MC_ALLOW_ANY_HOST
-  if (shouldFix('allowed_hosts') && (!allowedHosts || allowAny === '1' || allowAny === 'true')) {
-    try {
-      if (allowAny) {
-        unsetEnvVar('MC_ALLOW_ANY_HOST')
-      }
-      const preservedHosts = new Set([
-        'localhost',
-        '127.0.0.1',
-        ...allowedHosts.split(',').map((host) => normalizeHostname(host)).filter(Boolean),
-        ...getRequestHostCandidates(request),
-      ])
-      const mergedHosts = Array.from(preservedHosts)
-      setEnvVar('MC_ALLOWED_HOSTS', mergedHosts.join(','))
-      results.push({ id: 'allowed_hosts', name: 'Host allowlist', fixed: true, detail: `Set MC_ALLOWED_HOSTS=${mergedHosts.join(',')}`, fixSafety: FIX_SAFETY['allowed_hosts'] })
-    } catch (e: any) {
-      results.push({ id: 'allowed_hosts', name: 'Host allowlist', fixed: false, detail: e.message, fixSafety: FIX_SAFETY['allowed_hosts'] })
-    }
-  }
-
-  // 3. Fix MC_ENABLE_HSTS
-  if (shouldFix('hsts_enabled') && process.env.MC_ENABLE_HSTS !== '1') {
-    try {
-      setEnvVar('MC_ENABLE_HSTS', '1')
-      results.push({ id: 'hsts_enabled', name: 'HSTS enabled', fixed: true, detail: 'Set MC_ENABLE_HSTS=1', fixSafety: FIX_SAFETY['hsts_enabled'] })
-    } catch (e: any) {
-      results.push({ id: 'hsts_enabled', name: 'HSTS', fixed: false, detail: e.message, fixSafety: FIX_SAFETY['hsts_enabled'] })
-    }
-  }
-
-  // 4. Fix MC_COOKIE_SECURE
-  const cookieSecure = process.env.MC_COOKIE_SECURE
-  if (shouldFix('cookie_secure') && cookieSecure !== '1' && cookieSecure !== 'true') {
-    try {
-      setEnvVar('MC_COOKIE_SECURE', '1')
-      results.push({ id: 'cookie_secure', name: 'Secure cookies', fixed: true, detail: 'Set MC_COOKIE_SECURE=1', fixSafety: FIX_SAFETY['cookie_secure'] })
-    } catch (e: any) {
-      results.push({ id: 'cookie_secure', name: 'Secure cookies', fixed: false, detail: e.message, fixSafety: FIX_SAFETY['cookie_secure'] })
-    }
-  }
-
-  // 4b. Re-enable runtime rate limiting
-  const rateLimitDisabled = process.env.MC_DISABLE_RATE_LIMIT
-  if (shouldFix('rate_limiting') && rateLimitDisabled) {
-    try {
-      unsetEnvVar('MC_DISABLE_RATE_LIMIT')
-      results.push({ id: 'rate_limiting', name: 'Rate limiting active', fixed: true, detail: 'Removed MC_DISABLE_RATE_LIMIT', fixSafety: FIX_SAFETY['rate_limiting'] })
-    } catch (e: any) {
-      results.push({ id: 'rate_limiting', name: 'Rate limiting active', fixed: false, detail: e.message, fixSafety: FIX_SAFETY['rate_limiting'] })
-    }
-  }
-
-  // 5. Fix API_KEY if it's a known default
-  const apiKey = process.env.API_KEY || ''
-  if (shouldFix('api_key_set') && (!apiKey || apiKey === 'generate-a-random-key')) {
-    try {
-      const newKey = crypto.randomBytes(32).toString('hex')
-      setEnvVar('API_KEY', newKey)
-      results.push({ id: 'api_key_set', name: 'API key', fixed: true, detail: 'Generated new random API key', fixSafety: FIX_SAFETY['api_key_set'] })
-    } catch (e: any) {
-      results.push({ id: 'api_key_set', name: 'API key', fixed: false, detail: e.message, fixSafety: FIX_SAFETY['api_key_set'] })
-    }
-  }
-
   // 6. Fix OpenClaw config
-  const ocFixIds = ['config_permissions', 'gateway_auth', 'gateway_bind', 'elevated_disabled', 'dm_isolation', 'exec_restricted', 'control_ui_device_auth', 'control_ui_insecure_auth', 'fs_workspace_only', 'log_redaction']
+  const ocFixIds = ['config_permissions', 'gateway_bind', 'elevated_disabled', 'dm_isolation', 'exec_restricted', 'control_ui_device_auth', 'control_ui_insecure_auth', 'fs_workspace_only', 'log_redaction']
   const configPath = config.openclawConfigPath
   if (ocFixIds.some(id => shouldFix(id)) && configPath && existsSync(configPath)) {
     let releaseConfigLock: (() => void) | undefined
@@ -240,20 +95,6 @@ export async function POST(request: NextRequest) {
         }
       } catch (e: any) {
         results.push({ id: 'config_permissions', name: 'OpenClaw config permissions', fixed: false, detail: e.message, fixSafety: FIX_SAFETY['config_permissions'] })
-      }
-
-      // Fix gateway auth
-      if (shouldFix('gateway_auth')) {
-        if (!ocConfig.gateway) ocConfig.gateway = {}
-        if (!ocConfig.gateway.auth) ocConfig.gateway.auth = {}
-        if (ocConfig.gateway.auth.mode !== 'token') {
-          ocConfig.gateway.auth.mode = 'token'
-          if (!ocConfig.gateway.auth.token) {
-            ocConfig.gateway.auth.token = crypto.randomBytes(32).toString('hex')
-          }
-          configChanged = true
-          results.push({ id: 'gateway_auth', name: 'Gateway authentication', fixed: true, detail: 'Set auth.mode to "token" with generated token', fixSafety: FIX_SAFETY['gateway_auth'] })
-        }
       }
 
       // Fix gateway bind
@@ -399,7 +240,7 @@ export async function POST(request: NextRequest) {
     remainingManual,
     results,
     note: remainingChecks.length > 0
-      ? 'Some issues require manual action or additional review. Environment-backed fixes may still require a server restart to fully apply.'
-      : 'All currently detected auto-fixable issues have been resolved. Restart the server if you changed environment-backed settings.',
+      ? 'Some issues require configuration outside this API. Configure credentials in BWS and restart through GLAS.'
+      : 'All currently detected auto-fixable issues have been resolved.',
   })
 }

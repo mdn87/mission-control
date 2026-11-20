@@ -41,6 +41,8 @@ interface IntegrationMutationResult {
   error?: string
 }
 
+const credentialsReadOnly = true
+
 function integrationErrorData(error: unknown): IntegrationMutationResult | null {
   if (
     error instanceof ApiError &&
@@ -300,6 +302,9 @@ export function IntegrationsPanel() {
             {t('connectedCount', { connected: connectedCount, total: integrations.length })}
             {envPath && <span className="ml-2 font-mono text-muted-foreground/50">{envPath}</span>}
           </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Credentials are managed in Bitwarden Secrets Manager and injected by GLAS at startup.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {opAvailable && (
@@ -337,7 +342,7 @@ export function IntegrationsPanel() {
               {t('discard')}
             </Button>
           )}
-          <Button
+          {!credentialsReadOnly && <Button
             onClick={handleSave}
             disabled={!hasChanges || saving}
             variant={hasChanges ? 'default' : 'secondary'}
@@ -345,7 +350,7 @@ export function IntegrationsPanel() {
             className={!hasChanges ? 'cursor-not-allowed' : ''}
           >
             {saving ? t('saving') : t('saveChanges')}
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -395,6 +400,7 @@ export function IntegrationsPanel() {
             edits={edits}
             revealed={revealed}
             opAvailable={opAvailable}
+            readOnly={credentialsReadOnly}
             testing={testing === integration.id}
             pulling={pulling === integration.id}
             onEdit={handleEdit}
@@ -418,7 +424,7 @@ export function IntegrationsPanel() {
       </div>
 
       {/* Unsaved changes bar */}
-      {hasChanges && (
+      {!credentialsReadOnly && hasChanges && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-card border border-border rounded-lg shadow-lg px-4 py-2.5 flex items-center gap-3 z-40">
           <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
           <span className="text-xs text-foreground">
@@ -442,7 +448,7 @@ export function IntegrationsPanel() {
       )}
 
       {/* Remove confirmation dialog */}
-      {confirmRemove && (
+      {!credentialsReadOnly && confirmRemove && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card border border-border rounded-lg shadow-xl p-5 max-w-sm mx-4 space-y-4">
             <h3 className="text-sm font-semibold text-foreground">{t('removeTitle')}</h3>
@@ -486,6 +492,7 @@ function IntegrationCard({
   edits,
   revealed,
   opAvailable,
+  readOnly,
   testing,
   pulling,
   onEdit,
@@ -499,6 +506,7 @@ function IntegrationCard({
   edits: Record<string, string>
   revealed: Set<string>
   opAvailable: boolean
+  readOnly: boolean
   testing: boolean
   pulling: boolean
   onEdit: (key: string, value: string) => void
@@ -540,7 +548,7 @@ function IntegrationCard({
 
         <div className="flex items-center gap-1.5">
           {/* Pull from 1Password */}
-          {integration.vaultItem && opAvailable && (
+          {!readOnly && integration.vaultItem && opAvailable && (
             <Button
               onClick={onPull}
               disabled={pulling}
@@ -585,7 +593,7 @@ function IntegrationCard({
           )}
 
           {/* Remove */}
-          {hasSetVars && (
+          {!readOnly && hasSetVars && (
             <Button
               onClick={onRemove}
               title="Remove from .env"
@@ -644,7 +652,7 @@ function IntegrationCard({
                 )}
 
                 {/* Edit button */}
-                {!isEditing && (
+                {!readOnly && !isEditing && (
                   <Button
                     onClick={() => onEdit(envKey, '')}
                     title="Edit value"

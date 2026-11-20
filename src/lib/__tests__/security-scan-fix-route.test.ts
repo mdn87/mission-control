@@ -32,7 +32,6 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/lib/security-scan', () => ({
   FIX_SAFETY: {
     gateway_bind: 'safe',
-    rate_limiting: 'safe',
     world_writable: 'safe',
   },
   runSecurityScan: vi.fn(() => ({
@@ -102,7 +101,7 @@ describe('security-scan fix route env mutation', () => {
     ['empty ids', JSON.stringify({ ids: [] })],
     ['unknown ids', JSON.stringify({ ids: ['not-a-fix'] })],
     ['extra fields', JSON.stringify({ unexpected: true })],
-    ['oversized ids', JSON.stringify({ ids: Array.from({ length: 51 }, () => 'rate_limiting') })],
+    ['oversized ids', JSON.stringify({ ids: Array.from({ length: 51 }, () => 'gateway_bind') })],
   ])('rejects %s without applying broad fixes', async (_label, body) => {
     const { POST } = await import('@/app/api/security-scan/fix/route')
 
@@ -119,7 +118,7 @@ describe('security-scan fix route env mutation', () => {
     rmSync(tempDir, { recursive: true, force: true })
   })
 
-  it('preserves runtime env overrides in test mode while updating env files', async () => {
+  it('leaves runtime configuration as a manual change in test mode', async () => {
     process.env.MISSION_CONTROL_TEST_MODE = '1'
     process.env.MC_DISABLE_RATE_LIMIT = '1'
 
@@ -133,10 +132,11 @@ describe('security-scan fix route env mutation', () => {
     const response = await POST(request)
     expect(response.status).toBe(200)
     expect(process.env.MC_DISABLE_RATE_LIMIT).toBe('1')
-    expect(readFileSync(path.join(tempDir, '.env'), 'utf-8')).not.toContain('MC_DISABLE_RATE_LIMIT=')
+    expect(readFileSync(path.join(tempDir, '.env'), 'utf-8')).toContain('MC_DISABLE_RATE_LIMIT=1')
+    await expect(response.json()).resolves.toMatchObject({ remainingAutoFixable: 0 })
   })
 
-  it('mutates runtime env outside test mode so fixes apply immediately', async () => {
+  it('does not mutate runtime configuration outside test mode', async () => {
     delete process.env.MISSION_CONTROL_TEST_MODE
     process.env.MC_DISABLE_RATE_LIMIT = '1'
 
@@ -149,7 +149,8 @@ describe('security-scan fix route env mutation', () => {
 
     const response = await POST(request)
     expect(response.status).toBe(200)
-    expect(process.env.MC_DISABLE_RATE_LIMIT).toBeUndefined()
+    expect(process.env.MC_DISABLE_RATE_LIMIT).toBe('1')
+    await expect(response.json()).resolves.toMatchObject({ remainingAutoFixable: 0 })
   })
 
   it('removes only the world-write bit without granting execute permissions', async () => {

@@ -16,7 +16,7 @@ MC_PORT="${MC_PORT:-3000}"
 MC_DATA_DIR=""
 DEPLOY_MODE=""
 SKIP_OPENCLAW=false
-REPO_URL="https://github.com/builderz-labs/mission-control.git"
+REPO_URL="https://github.com/mdn87/mission-control.git"
 INSTALL_DIR="${MC_INSTALL_DIR:-$(pwd)/mission-control}"
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
@@ -89,40 +89,30 @@ check_prerequisites() {
   if command_exists node; then
     local node_major
     node_major=$(node -v | sed 's/v//' | cut -d. -f1)
-    if [[ "$node_major" -ge 20 ]]; then
+    if [[ "$node_major" -ge 22 ]]; then
       has_node=true
       ok "Node.js $(node -v) available"
     else
-      warn "Node.js $(node -v) found but v20+ required"
+      warn "Node.js $(node -v) found but v22+ required"
     fi
   fi
 
   if ! $has_docker && ! $has_node; then
-    die "Either Docker or Node.js 20+ is required. Install one and retry."
+    die "Node.js 22+ is required for the local installer. Install it and retry."
   fi
 
   # Auto-select deploy mode if not specified
-  if [[ -z "$DEPLOY_MODE" ]]; then
-    if $has_docker; then
-      DEPLOY_MODE="docker"
-      info "Auto-selected Docker deployment (use --local to override)"
-    else
-      DEPLOY_MODE="local"
-      info "Auto-selected local deployment (Docker not available)"
-    fi
-  fi
+  if [[ -z "$DEPLOY_MODE" ]]; then DEPLOY_MODE="local"; fi
 
   # Validate chosen mode
   if [[ "$DEPLOY_MODE" == "docker" ]] && ! $has_docker; then
     die "Docker deployment requested but Docker is not available"
   fi
   if [[ "$DEPLOY_MODE" == "local" ]] && ! $has_node; then
-    die "Local deployment requested but Node.js 20+ is not available"
+    die "Local deployment requested but Node.js 22+ is not available"
   fi
   if [[ "$DEPLOY_MODE" == "local" ]] && ! command_exists pnpm; then
-    info "Installing pnpm via corepack..."
-    corepack enable && corepack prepare pnpm@latest --activate
-    ok "pnpm installed"
+    die "Install pnpm before running the local installer"
   fi
 }
 
@@ -131,16 +121,10 @@ fetch_source() {
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     info "Updating existing installation at $INSTALL_DIR..."
     cd "$INSTALL_DIR"
-    git fetch --tags
-    local latest_tag
-    latest_tag=$(git describe --tags --abbrev=0 origin/main 2>/dev/null || echo "")
-    if [[ -n "$latest_tag" ]]; then
-      git checkout "$latest_tag"
-      ok "Checked out $latest_tag"
-    else
-      git pull origin main
-      ok "Updated to latest main"
-    fi
+    git fetch origin main || die "Could not fetch fork main"
+    git switch main || die "Could not switch to main; check local changes"
+    git merge --ff-only origin/main || die "Main has local commits; resolve them before installing"
+    ok "Updated to latest main"
   else
     info "Cloning Mission Control..."
     if command_exists git; then
@@ -153,52 +137,10 @@ fetch_source() {
   fi
 }
 
-# ── Generate .env ─────────────────────────────────────────────────────────────
+# ── Check GLAS configuration ──────────────────────────────────────────────────
 setup_env() {
-  if [[ -f "$INSTALL_DIR/.env" ]]; then
-    info "Existing .env found — keeping current configuration"
-    return
-  fi
-
-  info "Generating secure .env configuration..."
-  bash "$INSTALL_DIR/scripts/generate-env.sh" "$INSTALL_DIR/.env"
-
-  # Set the port if non-default
-  if [[ "$MC_PORT" != "3000" ]]; then
-    portable_sed "s|^# PORT=3000|PORT=$(sed_escape "$MC_PORT")|" "$INSTALL_DIR/.env"
-  fi
-
-  # Auto-detect and write OpenClaw home directory into .env
-  local oc_home="${OPENCLAW_HOME:-$HOME/.openclaw}"
-  if [[ -d "$oc_home" ]]; then
-    portable_sed "s|^OPENCLAW_HOME=.*|OPENCLAW_HOME=$(sed_escape "$oc_home")|" "$INSTALL_DIR/.env"
-    info "Set OPENCLAW_HOME=$oc_home in .env"
-  fi
-
-  # In Docker mode, the gateway runs on the host, not inside the container.
-  # Set OPENCLAW_GATEWAY_HOST to the Docker host gateway IP so the container
-  # can reach the gateway. Users may override this with the gateway container
-  # name if running OpenClaw in a container on the same network.
-  if [[ "$DEPLOY_MODE" == "docker" ]]; then
-    local gw_host="${OPENCLAW_GATEWAY_HOST:-}"
-    if [[ -z "$gw_host" ]]; then
-      # Detect Docker host IP (host-gateway alias or default bridge)
-      if getent hosts host-gateway &>/dev/null 2>&1; then
-        gw_host="host-gateway"
-      else
-        # Fallback: use the default Docker bridge gateway (172.17.0.1)
-        gw_host=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}' || echo "172.17.0.1")
-      fi
-    fi
-    if [[ -n "$gw_host" && "$gw_host" != "127.0.0.1" ]]; then
-      portable_sed "s|^OPENCLAW_GATEWAY_HOST=.*|OPENCLAW_GATEWAY_HOST=$(sed_escape "$gw_host")|" "$INSTALL_DIR/.env"
-      info "Set OPENCLAW_GATEWAY_HOST=$gw_host in .env (Docker host IP)"
-      info "  If your gateway runs in a Docker container, update OPENCLAW_GATEWAY_HOST"
-      info "  to the container name and add it to the mc-net network."
-    fi
-  fi
-
-  ok "Secure .env generated"
+  [[ -f "$INSTALL_DIR/config/glas.local.json" ]] || die "Create config/glas.local.json with BWS references before starting Mission Control"
+  [[ -n "${GLAS_HOME:-}" ]] || die "Set GLAS_HOME to the native-store profile inventory"
 }
 
 # ── Docker deployment ─────────────────────────────────────────────────────────
@@ -245,12 +187,10 @@ deploy_local() {
   ok "Build complete"
 
   # Create systemd service on Linux if systemctl is available
-  if [[ "$OS" == "linux" ]] && command_exists systemctl; then
-    setup_systemd
-  fi
+  # Enroll the service identity in GLAS before enabling a persistent systemd unit.
 
   info "Starting Mission Control..."
-  PORT="$MC_PORT" nohup pnpm start > "$INSTALL_DIR/.data/mc.log" 2>&1 &
+  PORT="$MC_PORT" nohup python3 scripts/with-glas.py --standalone > "$INSTALL_DIR/.data/mc.log" 2>&1 &
   local pid=$!
   echo "$pid" > "$INSTALL_DIR/.data/mc.pid"
 
@@ -286,12 +226,12 @@ After=network.target
 Type=simple
 User=$user
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$node_path $INSTALL_DIR/.next/standalone/server.js
+ExecStart=/usr/bin/python3 $INSTALL_DIR/scripts/with-glas.py --standalone
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
 Environment=PORT=$MC_PORT
-EnvironmentFile=$INSTALL_DIR/.env
+Environment=GLAS_HOME=${GLAS_HOME:-}
 
 [Install]
 WantedBy=multi-user.target
@@ -394,7 +334,7 @@ check_openclaw() {
     fi
   else
     info "OpenClaw home not found at $oc_home"
-    info "Set OPENCLAW_HOME in .env to point to your OpenClaw state directory"
+    info "Set OPENCLAW_HOME in nonsecret runtime configuration to point to your OpenClaw state directory"
   fi
 
   # Check gateway port
@@ -433,7 +373,7 @@ main() {
   setup_env
 
   case "$DEPLOY_MODE" in
-    docker) deploy_docker ;;
+    docker) die "The Docker installer does not provide a BWS-backed credential launch; use local mode" ;;
     local)  deploy_local ;;
     *)      die "Unknown deploy mode: $DEPLOY_MODE" ;;
   esac
@@ -450,7 +390,7 @@ main() {
   info "Mode:       $DEPLOY_MODE"
   info "Data:       $INSTALL_DIR/.data/"
   echo ""
-  info "Credentials are in: $INSTALL_DIR/.env"
+  info "Credentials are supplied by the GLAS manifest at runtime"
   echo ""
 
   if [[ "$DEPLOY_MODE" == "docker" ]]; then

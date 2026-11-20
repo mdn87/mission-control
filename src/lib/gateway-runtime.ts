@@ -83,7 +83,7 @@ export function registerMcAsDashboard(mcUrl: string): { registered: boolean; alr
 /**
  * Returns the gateway auth credential (token or password) for Bearer/WS auth.
  * Env overrides: OPENCLAW_GATEWAY_TOKEN, GATEWAY_TOKEN, OPENCLAW_GATEWAY_PASSWORD, GATEWAY_PASSWORD.
- * From config: uses gateway.auth.token when mode is "token", gateway.auth.password when mode is "password".
+ * The gateway credential must be injected into the current process.
  */
 export function getDetectedGatewayToken(): string {
   const envToken = (process.env.OPENCLAW_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '').trim()
@@ -92,17 +92,7 @@ export function getDetectedGatewayToken(): string {
   const envPassword = (process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD || '').trim()
   if (envPassword) return envPassword
 
-  const parsed = readOpenClawConfig()
-  const auth = parsed?.gateway?.auth
-  const mode = auth?.mode === 'password' ? 'password' : 'token'
-  const credential =
-    mode === 'password'
-      ? String(auth?.password ?? '').trim()
-      : String(auth?.token ?? '').trim()
-  if (credential) {
-    logger.debug('Gateway token loaded from openclaw.json (set OPENCLAW_GATEWAY_TOKEN env var to override)')
-  }
-  return credential
+  return ''
 }
 
 export function getDetectedGatewayPort(): number | null {

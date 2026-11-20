@@ -1,7 +1,6 @@
 /**
  * GitHub API client for Mission Control issue sync.
- * Resolves GITHUB_TOKEN from the OpenClaw integration env file first,
- * then falls back to process.env for deployments that export it directly.
+ * Resolves GITHUB_TOKEN from the current GLAS-launched process.
  */
 import { getEffectiveEnvValue } from '@/lib/runtime-env'
 

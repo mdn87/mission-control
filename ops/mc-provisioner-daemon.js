@@ -17,7 +17,6 @@ const SOCKET_PATH = process.env.MC_PROVISIONER_SOCKET || '/run/mc-provisioner.so
 const TOKEN = String(process.env.MC_PROVISIONER_TOKEN || '')
 const SOCKET_GROUP = process.env.MC_PROVISIONER_GROUP || 'openclaw'
 const REPO_ROOT = process.env.MISSION_CONTROL_REPO_ROOT || path.resolve(__dirname, '..')
-const DATA_DIR = process.env.MISSION_CONTROL_DATA_DIR || path.join(REPO_ROOT, '.data')
 const TENANT_HOME_ROOT = String(process.env.MC_TENANT_HOME_ROOT || '/home').trim() || '/home'
 const TENANT_WORKSPACE_DIRNAME = String(process.env.MC_TENANT_WORKSPACE_DIRNAME || 'workspace').trim() || 'workspace'
 const TEMPLATE_OPENCLAW_JSON = process.env.MC_SUPER_TEMPLATE_OPENCLAW_JSON || (process.env.OPENCLAW_HOME ? path.join(process.env.OPENCLAW_HOME, 'openclaw.json') : '')
@@ -100,12 +99,6 @@ function validateCommand(command, args) {
     if (source === GATEWAY_SYSTEMD_TEMPLATE) {
       if (flag !== '-n') return 'template copy must use -n'
       if (target !== '/etc/systemd/system/openclaw-gateway@.service') return 'gateway template target not allowed'
-      return null
-    }
-    const provisionerEnvRe = new RegExp(`^${escapeRegExp(path.join(DATA_DIR, 'provisioner'))}\\/([a-z0-9-]{3,32})\\/openclaw-gateway\\.env$`)
-    if (provisionerEnvRe.test(source)) {
-      if (flag !== '-f') return 'tenant env copy must use -f'
-      if (!/^\/etc\/openclaw-tenants\/[a-z_][a-z0-9_-]{1,30}\.env$/.test(target)) return 'tenant env target not allowed'
       return null
     }
     return 'cp source not allowed'
