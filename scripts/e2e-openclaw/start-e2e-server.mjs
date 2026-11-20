@@ -189,6 +189,8 @@ const gatewayPort = String(await findAvailablePort(gatewayHost))
 
 const baseEnv = {
   ...process.env,
+  // This isolated fixture never uses a production BWS entry.
+  AUTH_SECRET: 'synthetic-auth-secret-for-e2e-only',
   API_KEY: process.env.API_KEY || 'test-api-key-e2e-12345',
   AUTH_USER: process.env.AUTH_USER || 'admin',
   AUTH_PASS: process.env.AUTH_PASS || 'admin',
