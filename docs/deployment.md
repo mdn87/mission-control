@@ -41,6 +41,12 @@ For the CLI, TUI, and MCP client, create a separate ignored
 Legacy profiles may still select a nonsecret URL, but their API key and cookie
 fields are ignored. CLI login and command-line API key flags are disabled.
 
+Hermes is a separate runtime. If its onboarding wizard uses an API key, put that
+provider key in BWS and launch Hermes through its own GLAS manifest that binds
+the provider's expected name (for example, `ANTHROPIC_API_KEY`). The wizard
+does not accept or store provider keys; its old `set-env` API action is rejected.
+Device authorization remains available for providers that support it.
+
 The Docker entry point requires `AUTH_SECRET` and `API_KEY` and never generates
 or loads credential files. The local Docker installer is disabled until its
 service identity has a BWS backed launch path; use the local mode above.

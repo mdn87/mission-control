@@ -241,7 +241,7 @@ function scanCredentials(): Category {
 
   const authPass = resolveSeedAuthPassword() || ''
   if (!authPass) {
-    checks.push({ id: 'auth_pass', name: 'Admin password configured', status: 'fail', detail: 'Admin password is not configured', fix: 'Set AUTH_PASS or AUTH_PASS_B64 in .env to a strong password (12+ characters)', severity: 'critical' })
+    checks.push({ id: 'auth_pass', name: 'Admin password configured', status: 'fail', detail: 'Admin password is not configured', fix: 'Bind AUTH_PASS or AUTH_PASS_B64 from BWS through GLAS to a strong password (12+ characters)', severity: 'critical' })
   } else if (INSECURE_PASSWORDS.has(authPass)) {
     checks.push({ id: 'auth_pass', name: 'Admin password strength', status: 'fail', detail: 'Admin password is set to a known insecure default', fix: 'Change AUTH_PASS or AUTH_PASS_B64 to a unique password with 12+ characters', severity: 'critical' })
   } else if (authPass.length < 12) {
@@ -350,7 +350,7 @@ function scanOpenClaw(): Category {
       detail: gatewayOptional
         ? 'OpenClaw not configured (standalone mode — gateway optional)'
         : 'openclaw.json not found — OpenClaw checks skipped',
-      fix: gatewayOptional ? '' : 'Set OPENCLAW_HOME or OPENCLAW_CONFIG_PATH in .env',
+      fix: gatewayOptional ? '' : 'Set OPENCLAW_HOME or OPENCLAW_CONFIG_PATH in the service runtime configuration',
       severity: 'low',
     })
     return scoreCategory(checks)

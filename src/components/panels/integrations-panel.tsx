@@ -596,7 +596,7 @@ function IntegrationCard({
           {!readOnly && hasSetVars && (
             <Button
               onClick={onRemove}
-              title="Remove from .env"
+              title="Remove GLAS binding"
               variant="outline"
               size="xs"
               className="text-2xs hover:text-destructive hover:border-destructive/50"
