@@ -8,7 +8,7 @@ vi.mock('./web-reports', async (original) => ({
 }))
 import { POST } from '@/app/api/lugos/web-reports/route'
 
-const user = { id: 12, tenant_id: 3, workspace_id: 7, role: 'operator' }
+const user = { id: 12, tenant_id: 3, workspace_id: 7, role: 'operator', is_approved: 1 }
 function submit(action: string, args: object, extras: object = {}) {
   return POST(
     new Request('https://mc.test/api/lugos/web-reports', {
@@ -37,6 +37,8 @@ describe('authenticated WEIR reports', () => {
     mocks.auth.mockReturnValue({ error: 'Authentication required', status: 401 })
     expect((await submit('list', {})).status).toBe(401)
     mocks.auth.mockReturnValue({ user: { ...user, id: 0 } })
+    expect((await submit('list', {})).status).toBe(403)
+    mocks.auth.mockReturnValue({ user: { ...user, is_approved: 0 } })
     expect((await submit('list', {})).status).toBe(403)
     expect(mocks.call).not.toHaveBeenCalled()
   })

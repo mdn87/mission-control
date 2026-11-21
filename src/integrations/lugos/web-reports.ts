@@ -60,11 +60,11 @@ export const webReportRequest = z.discriminatedUnion('action', [
 ])
 
 export type WebReportRequest = z.infer<typeof webReportRequest>
-type Actor = { id: number; workspace_id: number; tenant_id: number; agent_id?: number | null }
+type Actor = { id: number; workspace_id: number; tenant_id: number; is_approved?: number; agent_id?: number | null }
 
 export function reportOwner(actor: Actor): string | null {
   const parts = [actor.tenant_id, actor.workspace_id, actor.id]
-  return !actor.agent_id && parts.every((v) => Number.isSafeInteger(v) && v > 0)
+  return actor.is_approved === 1 && !actor.agent_id && parts.every((v) => Number.isSafeInteger(v) && v > 0)
     ? 'mission-control:' + parts.join(':')
     : null
 }
