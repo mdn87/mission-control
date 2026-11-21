@@ -4,7 +4,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-. "$PROJECT_ROOT/scripts/load-env.sh"
 
 BRANCH="${BRANCH:-$(git -C "$PROJECT_ROOT" branch --show-current)}"
 PORT="${PORT:-3000}"
@@ -128,15 +127,6 @@ stop_existing_server() {
   exit 1
 }
 
-load_env() {
-  if [[ -f .env ]]; then
-    load_env_file .env
-  fi
-  if [[ -f .env.local ]]; then
-    load_env_file .env.local
-  fi
-}
-
 migrate_runtime_data_dir() {
   local target_data_dir="${MISSION_CONTROL_DATA_DIR:-$SOURCE_DATA_DIR}"
 
@@ -183,7 +173,6 @@ echo "==> fetching branch $BRANCH"
 git fetch origin "$BRANCH"
 git merge --ff-only FETCH_HEAD
 
-load_env
 migrate_runtime_data_dir
 
 echo "==> stopping existing standalone server before rebuild"
@@ -201,8 +190,6 @@ MISSION_CONTROL_TOKENS_PATH="$BUILD_DATA_DIR/mission-control-tokens.json" \
 pnpm build
 
 echo "==> starting standalone server"
-load_env
-
 PORT="$PORT" HOSTNAME="$LISTEN_HOST" nohup bash "$PROJECT_ROOT/scripts/start-standalone.sh" >"$LOG_PATH" 2>&1 &
 new_pid=$!
 echo "$new_pid" > "$PID_FILE"

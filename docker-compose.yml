@@ -26,9 +26,6 @@ services:
       # - NEXT_PUBLIC_GATEWAY_PORT=${NEXT_PUBLIC_GATEWAY_PORT:-18789}
       # Set to true if running without an OpenClaw gateway (standalone dashboard mode).
       # - NEXT_PUBLIC_GATEWAY_OPTIONAL=true
-    env_file:
-      - path: .env
-        required: false
     volumes:
       - mc-data:/app/.data
       # Optional: mount your OpenClaw state directory read-only so Mission Control

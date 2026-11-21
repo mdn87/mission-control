@@ -67,3 +67,5 @@ docs/_*.png
 !/.dias/chips.json
 !/.dias/status.json
 /config/glas.local.json
+/config/glas.*.local.json
+__pycache__/

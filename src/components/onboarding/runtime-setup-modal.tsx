@@ -248,7 +248,6 @@ function HermesSetup({ onClose, onComplete }: { onClose: () => void; onComplete:
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hermesStatus, setHermesStatus] = useState<any>(null)
-  const [providerKey, setProviderKey] = useState('')
   const [providerType, setProviderType] = useState<'anthropic' | 'openai' | 'openrouter' | 'nous' | 'google' | 'xai'>('anthropic')
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6')
   const [customModel, setCustomModel] = useState('')
@@ -258,7 +257,6 @@ function HermesSetup({ onClose, onComplete }: { onClose: () => void; onComplete:
   const [oauthError, setOauthError] = useState<string | null>(null)
   const [oauthUrl, setOauthUrl] = useState<string | null>(null)
   const [oauthCode, setOauthCode] = useState<string | null>(null)
-  const [providerSaved, setProviderSaved] = useState(false)
   const [soulContent, setSoulContent] = useState('')
   const oauthOutputRef = useRef<HTMLPreElement | null>(null)
   const oauthStickToBottomRef = useRef(true)
@@ -670,30 +668,12 @@ function HermesSetup({ onClose, onComplete }: { onClose: () => void; onComplete:
               {oauthError && <p className="text-[10px] text-red-400">{oauthError}</p>}
             </div>
           ) : (
-            <div>
-              <label className="text-[10px] text-muted-foreground/50 uppercase tracking-wider block mb-1">
-                {currentProvider?.label} API Key
-              </label>
-              <input
-                type="password"
-                value={providerKey}
-                onChange={(e) => setProviderKey(e.target.value)}
-                placeholder={`sk-...`}
-                className="w-full h-9 rounded border border-border/30 bg-surface-1 px-2.5 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-hidden focus:ring-1 focus:ring-primary/30 font-mono"
-              />
-              <p className="text-[10px] text-muted-foreground/30 mt-0.5">
-                Saved to ~/.hermes/.env
-              </p>
+            <div className="p-2.5 rounded-lg border border-border/15 bg-secondary/5 text-xs text-muted-foreground">
+              Store the {currentProvider?.label} API key in BWS, bind it in the Hermes GLAS manifest, and launch Hermes through GLAS. This wizard does not collect keys.
             </div>
           )}
           </>)
           })()}
-
-          {providerSaved && authMethod !== 'device_code' && (
-            <div className="p-2.5 rounded-lg border border-green-500/20 bg-green-500/5 text-xs text-green-400">
-              Provider key saved successfully.
-            </div>
-          )}
 
           {error && <p className="text-xs text-red-400">{error}</p>}
 
@@ -703,46 +683,9 @@ function HermesSetup({ onClose, onComplete }: { onClose: () => void; onComplete:
             <Button
               size="sm"
               disabled={running}
-              onClick={async () => {
-                setRunning(true)
-                setError(null)
-                try {
-                  const envMap: Record<string, string> = {
-                    anthropic: 'ANTHROPIC_API_KEY',
-                    openai: 'OPENAI_API_KEY',
-                    openrouter: 'OPENROUTER_API_KEY',
-                    nous: 'NOUS_API_KEY',
-                    google: 'GOOGLE_API_KEY',
-                    xai: 'XAI_API_KEY',
-                  }
-                  if (authMethod !== 'device_code' && providerKey.trim()) {
-                    // Use raw mode: this route returns 400 with { error } for
-                    // validation failures, and the original branched on
-                    // `res.ok` (a 400 is !ok and must surface data.error).
-                    // apiFetch does not throw on 400, so we need the Response
-                    // to reproduce the exact ok/!ok branching. 401/403/404/5xx
-                    // still throw and are handled by the outer catch.
-                    const res = await apiFetch<Response>('/api/hermes', {
-                      raw: true,
-                      method: 'POST',
-                      body: JSON.stringify({ action: 'set-env', key: envMap[providerType], value: providerKey }),
-                    })
-                    if (res.ok) {
-                      setProviderSaved(true)
-                    } else {
-                      const data = await res.json().catch(() => ({}))
-                      throw new Error(data.error || 'Failed to save')
-                    }
-                  }
-                  setStep('identity')
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Failed to save provider key')
-                } finally {
-                  setRunning(false)
-                }
-              }}
+              onClick={() => setStep('identity')}
             >
-              {running ? 'Saving...' : (authMethod !== 'device_code' && providerKey.trim()) ? 'Save & Continue' : 'Continue'}
+              Continue
             </Button>
           </div>
         </div>
@@ -848,9 +791,11 @@ function HermesSetup({ onClose, onComplete }: { onClose: () => void; onComplete:
         <div className="space-y-4">
           <div className="p-5 rounded-lg border border-green-500/30 bg-green-500/5 text-center space-y-3">
             <div className="text-3xl">+</div>
-            <p className="text-sm font-semibold text-green-400">Hermes is ready</p>
+            <p className="text-sm font-semibold text-green-400">Hermes hook installed</p>
             <p className="text-xs text-muted-foreground">
-              Hook installed{providerSaved ? ', provider configured' : ''}{soulContent.trim() ? ', identity set' : ''}.
+              {authMethod === 'api_key'
+                ? 'Bind your provider key from BWS in the Hermes GLAS manifest before launching Hermes.'
+                : `Device authorization complete${soulContent.trim() ? ', identity set' : ''}.`}
               {hermesStatus?.cronJobCount > 0 && ` ${hermesStatus.cronJobCount} cron jobs detected.`}
             </p>
           </div>

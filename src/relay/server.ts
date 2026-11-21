@@ -32,8 +32,7 @@ import {
   RemoteRelayQueue,
 } from '../integrations/lugos/relay-queue'
 import { RemoteRelaySigner } from '../integrations/lugos/relay-signer'
-import { FileRelayKeyProvider } from './file-key-provider'
-import { privateFilePermissionsAreSafe } from './private-file-permissions'
+import { MemoryRelayKeyProvider } from './file-key-provider'
 import {
   RelayRequestError,
   RemoteRelayApplication,
@@ -51,10 +50,9 @@ interface RelayConfig {
   listenHost: string
   listenPort: number
   tlsCertificatePath: string
-  tlsPrivateKeyPath: string
+  tlsPrivateKeyPem: string
   tlsClientCaPath: string
-  signingKeyPath: string
-  credentialsDirectory: string | undefined
+  signingKeyPem: string
   signingKeyId: string
   issuerId: string
   lifetimeSeconds: number
@@ -114,7 +112,6 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
   }
   const deviceConfigPath = safeExistingFile(
     required(env, 'LUGOS_RELAY_DEVICES_FILE'),
-    false,
   )
   const parsed = JSON.parse(readFileSync(deviceConfigPath, 'utf8')) as DeviceConfigFile
   if (parsed.schema !== DEVICE_CONFIG_SCHEMA
@@ -149,7 +146,9 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
   if (!/^[A-Za-z0-9._~-]{32,256}$/.test(token)) {
     throw new Error('relay_internal_token_invalid')
   }
-  const credentialsDirectory = resolveCredentialsDirectory(env.CREDENTIALS_DIRECTORY)
+  if (env.LUGOS_RELAY_TLS_KEY || env.LUGOS_RELAY_SIGNING_KEY) {
+    throw new Error('relay_private_key_file_unsupported')
+  }
   return {
     databasePath: safeDatabasePath(required(env, 'LUGOS_RELAY_DB_PATH')),
     internalHost,
@@ -157,19 +156,10 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
     internalToken: token,
     listenHost,
     listenPort: integer(env, 'LUGOS_RELAY_PORT', 8793, 1024, 65_535),
-    tlsCertificatePath: safeExistingFile(required(env, 'LUGOS_RELAY_TLS_CERT'), false),
-    tlsPrivateKeyPath: safeExistingFile(
-      required(env, 'LUGOS_RELAY_TLS_KEY'),
-      true,
-      credentialsDirectory,
-    ),
-    tlsClientCaPath: safeExistingFile(required(env, 'LUGOS_RELAY_CLIENT_CA'), false),
-    signingKeyPath: safeExistingFile(
-      required(env, 'LUGOS_RELAY_SIGNING_KEY'),
-      true,
-      credentialsDirectory,
-    ),
-    credentialsDirectory,
+    tlsCertificatePath: safeExistingFile(required(env, 'LUGOS_RELAY_TLS_CERT')),
+    tlsPrivateKeyPem: required(env, 'LUGOS_RELAY_TLS_KEY_PEM'),
+    tlsClientCaPath: safeExistingFile(required(env, 'LUGOS_RELAY_CLIENT_CA')),
+    signingKeyPem: required(env, 'LUGOS_RELAY_SIGNING_KEY_PEM'),
     signingKeyId: required(env, 'LUGOS_RELAY_SIGNING_KEY_ID'),
     issuerId: required(env, 'LUGOS_RELAY_ISSUER_ID'),
     lifetimeSeconds: integer(env, 'LUGOS_RELAY_CAPSULE_LIFETIME_SECONDS', 60, 1, 120),
@@ -178,31 +168,13 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
   }
 }
 
-function resolveCredentialsDirectory(path: string | undefined): string | undefined {
-  if (!path) return undefined
-  try {
-    return realpathSync(resolve(path))
-  } catch {
-    return undefined
-  }
-}
-
 function safeExistingFile(
   path: string,
-  privateFile: boolean,
-  credentialsDirectory?: string,
 ): string {
   const absolute = resolve(path)
   const metadata = lstatSync(absolute)
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
     throw new Error('relay_file_path_unsafe')
-  }
-  if (privateFile && !privateFilePermissionsAreSafe(
-    realpathSync(absolute),
-    metadata,
-    credentialsDirectory,
-  )) {
-    throw new Error('relay_private_file_permissions_unsafe')
   }
   return absolute
 }
@@ -227,11 +199,8 @@ function createApplication(config: RelayConfig): {
   application: RemoteRelayApplication
   database: Database.Database
 } {
-  const keyProvider = new FileRelayKeyProvider({
-    keyPath: config.signingKeyPath,
-    keyId: config.signingKeyId,
-    issuerId: config.issuerId,
-    credentialsDirectory: config.credentialsDirectory,
+  const keyProvider = new MemoryRelayKeyProvider({
+    pem: config.signingKeyPem, keyId: config.signingKeyId, issuerId: config.issuerId,
   })
   const signingKey = keyProvider.activeSigningKey()
   const publicKey = createPublicKey(signingKey.private_key.export({
@@ -372,7 +341,7 @@ export function createRelayServers(
 
   const external = createHttpsServer({
     cert: readFileSync(config.tlsCertificatePath),
-    key: readFileSync(config.tlsPrivateKeyPath),
+    key: config.tlsPrivateKeyPem,
     ca: readFileSync(config.tlsClientCaPath),
     requestCert: true,
     rejectUnauthorized: true,

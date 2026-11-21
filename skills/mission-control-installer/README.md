@@ -4,25 +4,22 @@ Install and configure Mission Control on any Linux or macOS system.
 
 ## What This Skill Does
 
-1. Detects the target OS and available runtimes (Docker or Node.js 20+)
+1. Detects the target OS and Node.js 22+
 2. Clones or updates the Mission Control repository
-3. Generates a secure `.env` with random credentials
-4. Starts the dashboard via Docker Compose or local Node.js
+3. Requires a GLAS native profile and ignored BWS reference manifest
+4. Starts the dashboard locally through GLAS
 5. Runs an OpenClaw fleet health check (cleans stale PIDs, old logs, validates gateway)
-6. Prints the access URL and admin credentials
+6. Prints the access URL without disclosing credentials
 
 ## Usage
 
 Run the installer script:
 
 ```bash
-# Auto-detect deployment mode (prefers Docker)
+# Local deployment
 bash install.sh
 
-# Force Docker deployment
-bash install.sh --docker
-
-# Force local deployment (Node.js + pnpm)
+# Explicit local deployment (Node.js + pnpm)
 bash install.sh --local
 
 # Custom port
@@ -35,34 +32,29 @@ bash install.sh --skip-openclaw
 Or as a one-liner:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/builderz-labs/mission-control/main/install.sh | bash
+git clone https://github.com/mdn87/mission-control.git
+cd mission-control
+MC_INSTALL_DIR="$PWD" bash install.sh --local
 ```
 
 ## Prerequisites
 
-- **Docker mode**: Docker Engine with Docker Compose v2
-- **Local mode**: Node.js 20+, pnpm (auto-installed via corepack if missing)
-- **Both**: git (to clone the repository)
+- Node.js 22+, pnpm, Python 3 and GLAS with BWS access
+- git (to clone the repository)
+- An ignored `config/glas.local.json` manifest binding `AUTH_SECRET` and `API_KEY`
 
 ## Post-Install
 
 After installation:
 
 1. Open `http://localhost:3000` (or your configured port)
-2. Log in with the credentials printed by the installer (also in `.env`)
+2. Log in using an admin account created during setup; credentials are never printed by the installer
 3. Configure your OpenClaw gateway connection in Settings
 4. Register agents via the Agents panel
 
-## Environment Configuration
+## Credential configuration
 
-The installer generates a `.env` from `.env.example` with secure random values for:
-
-- `AUTH_PASS` — 24-character random password
-- `API_KEY` — 32-character hex API key
-- `AUTH_SECRET` — 32-character session secret
-
-To regenerate credentials independently:
-
-```bash
-bash scripts/generate-env.sh --force
-```
+Store `AUTH_SECRET`, `API_KEY`, and any configured admin password in BWS. Bind
+only the names needed by this service in `config/glas.local.json`. Keep that
+reference manifest out of git; it contains IDs, not secret values. See
+`docs/deployment.md` for the service identity and launch steps.

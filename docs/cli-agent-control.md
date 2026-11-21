@@ -6,7 +6,8 @@ This repository includes a first-party CLI at:
 
 Designed for autonomous/headless usage first:
 - API key auth support
-- Profile persistence (~/.mission-control/profiles/*.json)
+- Nonsecret URL profiles (`~/.mission-control/profiles/*.json`); any legacy API key
+  or cookie fields in those files are ignored
 - Stable JSON mode (`--json`) with NDJSON for streaming
 - Deterministic exit code categories
 - SSE streaming for real-time event watching
@@ -15,23 +16,22 @@ Designed for autonomous/headless usage first:
 ## Quick start
 
 1) Ensure Mission Control API is running.
-2) Set environment variables or use profile flags:
-
-- MC_URL=http://127.0.0.1:3000
-- MC_API_KEY=your-key
+2) Create an ignored `config/glas.cli.local.json` reference manifest. Map a
+   BWS API key to `MC_API_KEY`; the launcher selects that manifest. Set the
+   nonsecret `MC_URL` if the API is not at `http://127.0.0.1:3000`.
 
 3) Run commands:
 
 ```bash
-node scripts/mc-cli.cjs agents list --json
-node scripts/mc-cli.cjs tasks queue --agent Aegis --max-capacity 2 --json
-node scripts/mc-cli.cjs sessions control --id <session-id> --action terminate
+python scripts/with-glas.py --exec node scripts/mc-cli.cjs agents list --json
+python scripts/with-glas.py --exec node scripts/mc-cli.cjs tasks queue --agent Aegis --max-capacity 2 --json
+python scripts/with-glas.py --exec node scripts/mc-cli.cjs sessions control --id <session-id> --action terminate
 ```
 
 ## Command groups
 
 ### auth
-- login --username --password
+- login is disabled; launch with a GLAS-injected `MC_API_KEY`
 - logout
 - whoami
 

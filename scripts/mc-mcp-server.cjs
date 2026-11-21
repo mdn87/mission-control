@@ -22,7 +22,7 @@ const { normalizeMissionControlBaseUrl } = require('./mc-base-url.cjs');
 // ---------------------------------------------------------------------------
 
 function loadConfig() {
-  // Try profile first, then env vars
+  // Profiles may select a nonsecret URL; credentials come only from GLAS.
   const profilePath = path.join(os.homedir(), '.mission-control', 'profiles', 'default.json');
   let profile = {};
   try {
@@ -33,8 +33,8 @@ function loadConfig() {
     baseUrl: normalizeMissionControlBaseUrl(
       process.env.MC_URL || profile.url || 'http://127.0.0.1:3000'
     ),
-    apiKey: process.env.MC_API_KEY || profile.apiKey || '',
-    cookie: process.env.MC_COOKIE || profile.cookie || '',
+    apiKey: process.env.MC_API_KEY || '',
+    cookie: process.env.MC_COOKIE || '',
   };
 }
 

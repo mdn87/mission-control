@@ -24,7 +24,7 @@ vi.mock('./private-file-permissions', async (importOriginal) => {
   }
 })
 
-import { FileRelayKeyProvider } from './file-key-provider'
+import { FileRelayKeyProvider, MemoryRelayKeyProvider } from './file-key-provider'
 import { privateFilePermissionsAreSafe } from './private-file-permissions'
 
 const permissionCheck = vi.mocked(privateFilePermissionsAreSafe)
@@ -72,5 +72,15 @@ describe('FileRelayKeyProvider private-file validation', () => {
       keyId: 'relay-key-v1',
       issuerId: 'lugos-host',
     })).toThrow('relay_signing_key_permissions_unsafe')
+  })
+})
+
+describe('MemoryRelayKeyProvider', () => {
+  it('accepts a GLAS-injected Ed25519 PEM without opening a key file', () => {
+    const { privateKey } = generateKeyPairSync('ed25519')
+    const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+    const provider = new MemoryRelayKeyProvider({ pem, keyId: 'relay-key-v1', issuerId: 'lugos-host' })
+    expect(provider.activeSigningKey().private_key.asymmetricKeyType).toBe('ed25519')
+    expect(permissionCheck).not.toHaveBeenCalled()
   })
 })

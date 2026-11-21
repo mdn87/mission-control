@@ -124,29 +124,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'Hook uninstalled' })
     }
 
-    if (action === 'set-env') {
-      const { key, value } = body
-
-      const envPath = join(HERMES_HOME, '.env')
-      mkdirSync(HERMES_HOME, { recursive: true, mode: 0o700 })
-      let envContent = ''
-      try { envContent = require('node:fs').readFileSync(envPath, 'utf8') } catch { /* new file */ }
-
-      // Replace existing key or append
-      const regex = new RegExp(`^${key}=.*$`, 'm')
-      if (regex.test(envContent)) {
-        envContent = envContent.replace(regex, `${key}=${value}`)
-      } else {
-        envContent = envContent.trimEnd() + `\n${key}=${value}\n`
-      }
-
-      writeFileSync(envPath, envContent, { encoding: 'utf8', mode: 0o600 })
-      chmodSync(envPath, 0o600)
-      audit('environment_updated', { key })
-      logger.info({ key }, 'Hermes env var set via setup wizard')
-      return NextResponse.json({ success: true })
-    }
-
     if (action === 'set-soul') {
       const { content } = body
       if (typeof content !== 'string') {
@@ -339,7 +316,7 @@ const HANDLER_PY = `"""
 Mission Control hook for Hermes Agent.
 Reports session telemetry to the MC /api/sessions endpoint.
 
-Configuration (via ~/.hermes/.env or environment):
+Configuration (via a GLAS launch with BWS bindings):
   MC_URL      - Mission Control base URL (default: http://localhost:3000)
   MC_API_KEY  - API key for authentication (optional)
 """

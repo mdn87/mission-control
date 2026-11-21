@@ -12,8 +12,8 @@ WorkingDirectory=/home/%i
 Environment=HOME=/home/%i
 Environment=PATH=/home/%i/bin:/usr/local/bin:/usr/bin:/bin:/home/%i/.local/bin
 Environment=NODE_OPTIONS=--experimental-sqlite
-EnvironmentFile=-/etc/openclaw-tenants/%i.env
-ExecStart=/usr/local/bin/openclaw gateway --port ${OPENCLAW_GATEWAY_PORT}
+LoadCredentialEncrypted=glas-bws-token:/etc/credstore.encrypted/openclaw-tenant-%i
+ExecStart=/usr/bin/python3 /srv/lugos/runtimes/glas/host-runtime.py /etc/openclaw-tenants/%i.glas-runtime.json
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

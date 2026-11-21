@@ -961,19 +961,7 @@ export function generateDockerSidecar(runtime: RuntimeId): string {
 # then let Mission Control discover sessions from ~/.local/share/opencode.`
   }
 
-  return `  # Hermes Agent sidecar
-  hermes-agent:
-    image: ghcr.io/nousresearch/hermes-agent:latest
-    container_name: hermes-agent
-    environment:
-      - MC_URL=http://mission-control:\${PORT:-3000}
-      - MC_API_KEY=\${API_KEY:-}
-    volumes:
-      - hermes-data:/root/.hermes
-    networks:
-      - mc-net
-    restart: unless-stopped
-
-# Add to volumes section:
-#   hermes-data:`
+  return `# Hermes Agent sidecar is unavailable until its process can launch through
+# GLAS with a BWS reference for MC_API_KEY. Configure that service identity and
+# manifest before enabling a sidecar.`
 }

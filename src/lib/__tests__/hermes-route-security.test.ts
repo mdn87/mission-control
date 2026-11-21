@@ -32,8 +32,8 @@ describe('Hermes route security boundary', () => {
     expect(output.length).toBeLessThan(16_100)
   })
 
-  it('strictly validates action-specific bodies and secret sizes', () => {
-    expect(hermesMutationSchema.safeParse({ action: 'set-env', key: 'OPENAI_API_KEY', value: 'key' }).success).toBe(true)
+  it('strictly validates action-specific bodies and rejects credential-file writes', () => {
+    expect(hermesMutationSchema.safeParse({ action: 'set-env', key: 'OPENAI_API_KEY', value: 'key' }).success).toBe(false)
     expect(hermesMutationSchema.safeParse({ action: 'set-env', key: 'PATH', value: '/tmp' }).success).toBe(false)
     expect(hermesMutationSchema.safeParse({ action: 'install-hook', unexpected: true }).success).toBe(false)
     expect(hermesMutationSchema.safeParse({ action: 'run-command', command: 'x'.repeat(501) }).success).toBe(false)
@@ -51,7 +51,7 @@ describe('Hermes route security boundary', () => {
     expect(limitAt).toBeGreaterThan(authAt)
     expect(validateAt).toBeGreaterThan(limitAt)
     expect(dispatchAt).toBeGreaterThan(validateAt)
-    expect(source).toContain('chmodSync(envPath, 0o600)')
+    expect(source).not.toContain("if (action === 'set-env')")
     expect(source).toContain('chmodSync(soulPath, 0o600)')
     expect(source).not.toContain("trimmed.startsWith('hermes')")
     expect(source).not.toContain('hookDir: HOOK_DIR')

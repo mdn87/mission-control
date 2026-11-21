@@ -8,11 +8,6 @@ export const hermesMutationSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('install-hook') }).strict(),
   z.object({ action: z.literal('uninstall-hook') }).strict(),
   z.object({
-    action: z.literal('set-env'),
-    key: z.enum(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'NOUS_API_KEY', 'GOOGLE_API_KEY', 'XAI_API_KEY']),
-    value: z.string().min(1).max(20_000),
-  }).strict(),
-  z.object({
     action: z.literal('set-soul'),
     content: z.string().max(100_000),
   }).strict(),

@@ -57,9 +57,6 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      - name: Prepare E2E environment
-        run: cp .env.test .env
-
       - name: Build
         run: pnpm build
 

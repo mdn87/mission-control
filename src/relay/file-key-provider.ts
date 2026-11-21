@@ -51,6 +51,20 @@ export class FileRelayKeyProvider implements RelayKeyProvider {
   }
 }
 
+export class MemoryRelayKeyProvider implements RelayKeyProvider {
+  private readonly key: RelaySigningKey
+
+  constructor(input: { pem: string; keyId: string; issuerId: string }) {
+    const privateKey = createPrivateKey(input.pem)
+    assertIdentifier(input.keyId, 'key ID')
+    assertIdentifier(input.issuerId, 'issuer ID')
+    assertEd25519PrivateKey(privateKey)
+    this.key = { key_id: input.keyId, issuer_id: input.issuerId, private_key: privateKey }
+  }
+
+  activeSigningKey(): RelaySigningKey { return this.key }
+}
+
 function assertEd25519PrivateKey(key: KeyObject): void {
   if (key.type !== 'private' || key.asymmetricKeyType !== 'ed25519') {
     throw new Error('relay_signing_key_invalid')

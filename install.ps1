@@ -54,7 +54,7 @@ $ErrorActionPreference = "Stop"
 if (-not $InstallDir) {
     $InstallDir = if ($env:MC_INSTALL_DIR) { $env:MC_INSTALL_DIR } else { Join-Path (Get-Location) "mission-control" }
 }
-$RepoUrl = "https://github.com/builderz-labs/mission-control.git"
+$RepoUrl = "https://github.com/mdn87/mission-control.git"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 function Write-MC   { param([string]$Msg) Write-Host "[MC] $Msg" -ForegroundColor Blue }
@@ -64,22 +64,6 @@ function Write-Err  { param([string]$Msg) Write-Host "[ERR] $Msg" -ForegroundCol
 function Stop-WithError { param([string]$Msg) Write-Err $Msg; exit 1 }
 
 function Test-Command { param([string]$Name) $null -ne (Get-Command $Name -ErrorAction SilentlyContinue) }
-
-function Get-RandomPassword {
-    param([int]$Length = 24)
-    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $bytes = New-Object byte[] $Length
-    $rng.GetBytes($bytes)
-    -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })
-}
-
-function Get-RandomHex {
-    param([int]$Length = 32)
-    $bytes = New-Object byte[] ($Length / 2)
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    ($bytes | ForEach-Object { $_.ToString("x2") }) -join ''
-}
 
 # ── Prerequisites ─────────────────────────────────────────────────────────────
 function Test-Prerequisites {
@@ -113,15 +97,7 @@ function Test-Prerequisites {
     }
 
     # Auto-select deploy mode if not specified
-    if (-not $script:Mode) {
-        if ($hasDocker) {
-            $script:Mode = "docker"
-            Write-MC "Auto-selected Docker deployment (use -Mode local to override)"
-        } else {
-            $script:Mode = "local"
-            Write-MC "Auto-selected local deployment (Docker not available)"
-        }
-    }
+    if (-not $script:Mode) { $script:Mode = "local" }
 
     # Validate chosen mode
     if ($script:Mode -eq "docker" -and -not $hasDocker) {
@@ -131,10 +107,7 @@ function Test-Prerequisites {
         Stop-WithError "Local deployment requested but Node.js 22+ is not available"
     }
     if ($script:Mode -eq "local" -and -not (Test-Command "pnpm")) {
-        Write-MC "Installing pnpm via corepack..."
-        corepack enable
-        corepack prepare pnpm@latest --activate
-        Write-Ok "pnpm installed"
+        Stop-WithError 'Install pnpm before running the local installer'
     }
 }
 
@@ -144,15 +117,13 @@ function Get-Source {
         Write-MC "Updating existing installation at $($script:InstallDir)..."
         Push-Location $script:InstallDir
         try {
-            git fetch --tags
-            $latestTag = git describe --tags --abbrev=0 origin/main 2>$null
-            if ($latestTag) {
-                git checkout $latestTag
-                Write-Ok "Checked out $latestTag"
-            } else {
-                git pull origin main
-                Write-Ok "Updated to latest main"
-            }
+            git fetch origin main
+            if ($LASTEXITCODE -ne 0) { Stop-WithError 'Could not fetch fork main' }
+            git switch main
+            if ($LASTEXITCODE -ne 0) { Stop-WithError 'Could not switch to main; check local changes' }
+            git merge --ff-only origin/main
+            if ($LASTEXITCODE -ne 0) { Stop-WithError 'Main has local commits; resolve them before installing' }
+            Write-Ok 'Updated to latest main'
         } finally {
             Pop-Location
         }
@@ -166,47 +137,14 @@ function Get-Source {
     }
 }
 
-# ── Generate .env ─────────────────────────────────────────────────────────────
-function New-EnvFile {
-    $envPath = Join-Path $script:InstallDir ".env"
-    $examplePath = Join-Path $script:InstallDir ".env.example"
-
-    if (Test-Path $envPath) {
-        Write-MC "Existing .env found - keeping current configuration"
-        return
+function Assert-GlasConfiguration {
+    $manifest = Join-Path $script:InstallDir 'config/glas.local.json'
+    if (-not (Test-Path -LiteralPath $manifest)) {
+        Stop-WithError "Create the BWS reference manifest at $manifest before starting Mission Control"
     }
-
-    if (-not (Test-Path $examplePath)) {
-        Stop-WithError ".env.example not found at $examplePath"
+    if (-not $env:GLAS_HOME) {
+        Stop-WithError 'Set GLAS_HOME to the native-store profile inventory before starting Mission Control'
     }
-
-    Write-MC "Generating secure .env configuration..."
-
-    $authPass = Get-RandomPassword 24
-    $apiKey = Get-RandomHex 32
-    $authSecret = Get-RandomPassword 32
-
-    $content = Get-Content $examplePath -Raw
-    $content = $content -replace '(?m)^# AUTH_USER=.*',   "AUTH_USER=admin"
-    $content = $content -replace '(?m)^# AUTH_PASS=.*',   "AUTH_PASS=$authPass"
-    $content = $content -replace '(?m)^# API_KEY=.*',     "API_KEY=$apiKey"
-    $content = $content -replace '(?m)^# AUTH_SECRET=.*',  "AUTH_SECRET=$authSecret"
-
-    # Set port if non-default
-    if ($script:Port -ne 3000) {
-        $content = $content -replace '(?m)^# PORT=3000', "PORT=$($script:Port)"
-    }
-
-    $content | Set-Content $envPath -NoNewline
-    Write-Ok "Secure .env generated"
-
-    Write-Host ""
-    Write-Host "  AUTH_USER: admin" -ForegroundColor Cyan
-    Write-Host "  AUTH_PASS: $authPass" -ForegroundColor Cyan
-    Write-Host "  API_KEY:   $apiKey" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  Save these credentials - they are not stored elsewhere." -ForegroundColor Yellow
-    Write-Host ""
 }
 
 # ── Docker deployment ─────────────────────────────────────────────────────────
@@ -282,11 +220,12 @@ function Deploy-Local {
         $errLogPath = Join-Path $dataPath "mc-err.log"
         $pidPath = Join-Path $dataPath "mc.pid"
 
-        $serverJs = Join-Path $standaloneDir "server.js"
-        $process = Start-Process -FilePath "cmd.exe" `
-            -ArgumentList "/c node `"$serverJs`" > `"$logPath`" 2> `"$errLogPath`"" `
+        $process = Start-Process -FilePath "python" `
+            -ArgumentList "scripts/with-glas.py --standalone" `
             -WorkingDirectory $script:InstallDir `
             -WindowStyle Hidden `
+            -RedirectStandardOutput $logPath `
+            -RedirectStandardError $errLogPath `
             -PassThru
         $process.Id | Set-Content $pidPath
 
@@ -339,7 +278,7 @@ function Test-OpenClaw {
         }
     } else {
         Write-MC "OpenClaw home not found at $ocHome"
-        Write-MC "Set OPENCLAW_HOME in .env to point to your OpenClaw state directory"
+        Write-MC "Set OPENCLAW_HOME in nonsecret runtime configuration to point to your OpenClaw state directory"
     }
 
     # Check gateway port
@@ -384,10 +323,10 @@ function Main {
         New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
     }
 
-    New-EnvFile
+    Assert-GlasConfiguration
 
     switch ($Mode) {
-        "docker" { Deploy-Docker }
+        "docker" { Stop-WithError 'The Docker installer does not provide a BWS-backed credential launch; use local mode' }
         "local"  { Deploy-Local }
         default  { Stop-WithError "Unknown deploy mode: $Mode" }
     }
@@ -404,7 +343,7 @@ function Main {
     Write-MC "Mode:       $Mode"
     Write-MC "Data:       $(Join-Path $script:InstallDir '.data')"
     Write-Host ""
-    Write-MC "Credentials are in: $(Join-Path $script:InstallDir '.env')"
+    Write-MC "Credentials are supplied by the GLAS manifest at runtime"
     Write-Host ""
 
     if ($Mode -eq "docker") {
