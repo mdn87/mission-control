@@ -26,6 +26,7 @@ GET /api/lugos/lineage
 GET /api/lugos/lineage/list
 GET /api/lugos/project-snapshot
 GET /api/lugos/ogmi
+POST /api/lugos/web-reports
 POST /api/lugos/remote-decisions
 GET /api/lugos/remote-decisions/passkeys
 DELETE /api/lugos/remote-decisions/passkeys
