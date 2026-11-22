@@ -65,10 +65,13 @@ the container configuration shown by `docker inspect` or stored under
 
 The container runs in production mode, so it answers only the hosts in
 `MC_ALLOWED_HOSTS` (plus localhost and 127.0.0.1) and gives everything else 403.
-Compose defaults the list to lugos-host's names, `10.0.1.33,lugos-host,knot.newman.foo`,
-and always appends `0.0.0.0`: Next reports the container's bind address as a
-request host, so without it even the health check is refused. Set
+Compose defaults the list to lugos-host's names, `10.0.1.33,lugos-host,knot.newman.foo`.
+Next reports the container's bind address (`0.0.0.0`) as the URL host; the host
+check ignores that value, but a client that sends `Host: 0.0.0.0` is refused. Set
 `MC_ALLOWED_HOSTS` in the environment that runs `pnpm docker:up` for other hosts.
+The hardened overlay (`docker-compose.hardened.yml`) keeps its loopback-only
+default, `localhost,127.0.0.1`, for use behind a reverse proxy on the same host;
+set `MC_HARDENED_ALLOWED_HOSTS` to widen it.
 
 Docker access on the host is still root-equivalent: anyone in the `docker`
 group can `docker exec` into the container and read the server's environment.

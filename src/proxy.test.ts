@@ -5,6 +5,50 @@ function setNodeEnv(value: string) {
 }
 
 describe('proxy host matching', () => {
+  it('ignores the container bind address reported as the URL host', async () => {
+    vi.resetModules()
+    vi.doMock('node:os', () => ({
+      default: { hostname: () => 'container-id' },
+      hostname: () => 'container-id',
+    }))
+
+    const { proxy } = await import('./proxy')
+    const request = {
+      headers: new Headers({ host: 'localhost:3000' }),
+      nextUrl: { host: '0.0.0.0:3000', hostname: '0.0.0.0', pathname: '/login', clone: () => ({ pathname: '/login' }) },
+      method: 'GET',
+      cookies: { get: () => undefined },
+    } as any
+
+    setNodeEnv('production')
+    process.env.MC_ALLOWED_HOSTS = '10.0.1.33,lugos-host'
+    delete process.env.MC_ALLOW_ANY_HOST
+
+    expect(proxy(request).status).not.toBe(403)
+  })
+
+  it('refuses a client that sends Host 0.0.0.0', async () => {
+    vi.resetModules()
+    vi.doMock('node:os', () => ({
+      default: { hostname: () => 'container-id' },
+      hostname: () => 'container-id',
+    }))
+
+    const { proxy } = await import('./proxy')
+    const request = {
+      headers: new Headers({ host: '0.0.0.0:3000' }),
+      nextUrl: { host: '0.0.0.0:3000', hostname: '0.0.0.0', pathname: '/login', clone: () => ({ pathname: '/login' }) },
+      method: 'GET',
+      cookies: { get: () => undefined },
+    } as any
+
+    setNodeEnv('production')
+    process.env.MC_ALLOWED_HOSTS = '10.0.1.33,lugos-host'
+    delete process.env.MC_ALLOW_ANY_HOST
+
+    expect(proxy(request).status).toBe(403)
+  })
+
   it('fails closed to implicit hosts when MC_ALLOWED_HOSTS is unset in production', async () => {
     vi.resetModules()
     vi.doMock('node:os', () => ({
