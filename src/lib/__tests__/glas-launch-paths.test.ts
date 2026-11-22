@@ -133,6 +133,7 @@ describe('docker credential delivery', () => {
       cwd: ROOT,
       encoding: 'utf8',
       env: {
+        NODE_ENV: 'test',
         PATH: `${bin}:${process.env.PATH ?? ''}`,
         MC_GLAS_MANIFEST: SERVER_EXAMPLE,
         AUTH_SECRET: SECRET,
@@ -158,7 +159,7 @@ describe('docker credential delivery', () => {
     const result = spawnSync('node', [join(ROOT, 'scripts/docker-up.cjs')], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { PATH: `${bin}:${process.env.PATH ?? ''}`, MC_GLAS_MANIFEST: SERVER_EXAMPLE },
+      env: { NODE_ENV: 'test', PATH: `${bin}:${process.env.PATH ?? ''}`, MC_GLAS_MANIFEST: SERVER_EXAMPLE },
     })
     expect(result.status).toBe(1)
     expect(() => readFileSync(log)).toThrow()
@@ -187,7 +188,7 @@ describe('docker entrypoint', () => {
     }
     const result = spawnSync('sh', [join(ROOT, 'docker-entrypoint.sh')], {
       encoding: 'utf8',
-      env: { PATH: `${bin}:/usr/bin:/bin`, MC_CREDENTIALS_DIR: creds, MC_CREDENTIALS_WAIT: '1', ...env },
+      env: { NODE_ENV: 'test', PATH: `${bin}:/usr/bin:/bin`, MC_CREDENTIALS_DIR: creds, MC_CREDENTIALS_WAIT: '1', ...env },
     })
     return { result, creds }
   }
