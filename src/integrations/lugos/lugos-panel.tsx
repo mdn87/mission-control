@@ -17,6 +17,7 @@ import { useLugosOperator } from './use-lugos-operator'
 import { RemoteDecisionPanel } from './remote-decision-panel'
 import { WebReportsPanel } from './web-reports-panel'
 import { FieldReviewPanel } from './field-review-panel'
+import { SavedTaskPanel } from './saved-task-panel'
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return '—'
@@ -181,6 +182,7 @@ export function LugosPanel() {
 
       <WebReportsPanel canRun={currentUser?.role === 'admin' || currentUser?.role === 'operator'} />
       <FieldReviewPanel canReview={canCommand} />
+      <SavedTaskPanel canReview={canCommand} />
       {error && (
         <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error}
