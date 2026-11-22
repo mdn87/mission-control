@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "consumer": {
+    "id": "mission-control-cli",
+    "name": "Mission Control CLI, TUI, and MCP client",
+    "project": "mission-control",
+    "environment": "production",
+    "host": "local"
+  },
+  "secrets": [
+    {
+      "secret_id": "00000000-0000-0000-0000-000000000002",
+      "env": "MC_API_KEY",
+      "name": "Mission Control API key",
+      "provider": "mission-control",
+      "kind": "api_key",
+      "account": "mission-control service",
+      "purpose": "Lets the CLI, TUI, and MCP client call the server. Use the same BWS secret ID as API_KEY in the server manifest.",
+      "permissions": [],
+      "manage_url": null,
+      "rotation_notes": "Changes with the server API_KEY entry."
+    }
+  ]
+}
