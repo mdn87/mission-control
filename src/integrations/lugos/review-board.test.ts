@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DatabaseSync } from 'node:sqlite'
+import Database from 'better-sqlite3'
 
 const shared = vi.hoisted(() => ({ session: vi.fn(), database: vi.fn() }))
 vi.mock('@/lib/auth', async (original) => ({
@@ -54,7 +54,7 @@ describe('signed-in task board reads', () => {
   })
 
   it('serves only the Review column of the signed-in workspace as an inert document', async () => {
-    const db = new DatabaseSync(':memory:')
+    const db = new Database(':memory:')
     try {
       db.exec('CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, workspace_id INTEGER, status TEXT)')
       const add = db.prepare('INSERT INTO tasks VALUES (?, ?, ?, ?)')
