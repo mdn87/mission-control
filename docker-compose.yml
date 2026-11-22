@@ -6,6 +6,12 @@ services:
       - "${MC_PORT:-3000}:${PORT:-3000}"
     environment:
       - PORT=${PORT:-3000}
+      # ── Hosts answered in production (comma-separated; anything else gets 403) ──
+      # Every host a request carries must match, and inside the container Next
+      # reports the bind address 0.0.0.0 for each request, so it stays on the
+      # list. localhost and 127.0.0.1 are always allowed. Set MC_ALLOWED_HOSTS
+      # to replace the lugos-host names.
+      - MC_ALLOWED_HOSTS=${MC_ALLOWED_HOSTS:-10.0.1.33,lugos-host,knot.newman.foo},0.0.0.0
       # ── Credentials: never listed here ──
       # Start through `pnpm docker:up`. It runs under the GLAS manifest in
       # config/glas.local.json and writes each mapped credential into the
