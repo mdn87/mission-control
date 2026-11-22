@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 const reportId = z.string().regex(/^report-[a-f0-9]{64}$/)
 export const webReportRequest = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('task_review'), args: z.object({}).strict() }).strict(),
   z
     .object({
       action: z.literal('dias'),
@@ -50,7 +51,9 @@ export const webReportRequest = z.discriminatedUnion('action', [
       args: z.object({ limit: z.number().int().min(1).max(100).optional() }).strict(),
     })
     .strict(),
-  z.object({ action: z.literal('open'), args: z.object({ report_id: reportId }).strict() }).strict(),
+  z
+    .object({ action: z.literal('open'), args: z.object({ report_id: reportId }).strict() })
+    .strict(),
   z
     .object({
       action: z.literal('source'),
@@ -60,11 +63,19 @@ export const webReportRequest = z.discriminatedUnion('action', [
 ])
 
 export type WebReportRequest = z.infer<typeof webReportRequest>
-type Actor = { id: number; workspace_id: number; tenant_id: number; is_approved?: number; agent_id?: number | null }
+type Actor = {
+  id: number
+  workspace_id: number
+  tenant_id: number
+  is_approved?: number
+  agent_id?: number | null
+}
 
 export function reportOwner(actor: Actor): string | null {
   const parts = [actor.tenant_id, actor.workspace_id, actor.id]
-  return actor.is_approved === 1 && !actor.agent_id && parts.every((v) => Number.isSafeInteger(v) && v > 0)
+  return actor.is_approved === 1 &&
+    !actor.agent_id &&
+    parts.every((v) => Number.isSafeInteger(v) && v > 0)
     ? 'mission-control:' + parts.join(':')
     : null
 }
@@ -110,8 +121,14 @@ function requestOverSocket(path: string, payload: string): Promise<string> {
 export async function callWebReport(
   request: WebReportRequest,
   owner: string,
+  reviewGrant?: string,
 ): Promise<Record<string, unknown>> {
-  const payload = JSON.stringify({ ...request, owner, permitted_jobs: ['dias', 'marketplace'] })
+  const payload = JSON.stringify({
+    ...request,
+    owner,
+    permitted_jobs: ['dias', 'marketplace', 'task_review'],
+    ...(request.action === 'task_review' ? { review_grant: reviewGrant } : {}),
+  })
   const stdout = process.env.WEIR_REPORT_SOCKET
     ? await requestOverSocket(process.env.WEIR_REPORT_SOCKET, payload)
     : await requestOverStdio(payload)

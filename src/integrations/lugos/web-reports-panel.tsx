@@ -33,7 +33,10 @@ type Report = ReportSummary & {
   later?: Chip[]
   warnings?: string[]
   rows?: Listing[]
-  counts: Record<string, number>
+  counts?: Record<string, number>
+  total?: number
+  tasks?: { id: number; title: string }[]
+  observed_at?: string
   sources: { url: string; observed_at: string }[]
   criteria?: {
     query: string
@@ -64,7 +67,7 @@ const money = (value: Money) =>
   typeof value === 'object' ? value.amount + ' ' + value.currency : 'Unknown'
 
 export function WebReportsPanel({ canRun }: { canRun: boolean }) {
-  const [job, setJob] = useState<'dias' | 'marketplace'>('dias')
+  const [job, setJob] = useState<'dias' | 'marketplace' | 'task_review'>('dias')
   const [history, setHistory] = useState<ReportSummary[]>([])
   const [report, setReport] = useState<Report | null>(null)
   const [evidence, setEvidence] = useState<string | null>(null)
@@ -102,7 +105,10 @@ export function WebReportsPanel({ canRun }: { canRun: boolean }) {
   }
   const inputClass = 'mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm'
   return (
-    <section className="space-y-4 rounded-lg border border-border bg-card p-4" aria-label="Web reports">
+    <section
+      className="space-y-4 rounded-lg border border-border bg-card p-4"
+      aria-label="Web reports"
+    >
       <h3 className="font-semibold">Web reports</h3>
       {canRun && (
         <form
@@ -124,6 +130,7 @@ export function WebReportsPanel({ canRun }: { canRun: boolean }) {
             >
               <option value="dias">Dias project work</option>
               <option value="marketplace">Marketplace comparison</option>
+              <option value="task_review">Tasks in review</option>
             </select>
           </label>
           {job === 'dias' ? (
@@ -143,7 +150,7 @@ export function WebReportsPanel({ canRun }: { canRun: boolean }) {
                 <input name="since" type="date" className={inputClass} />
               </label>
             </>
-          ) : (
+          ) : job === 'marketplace' ? (
             <>
               <label className="grow text-xs">
                 Item or search phrase
@@ -151,7 +158,13 @@ export function WebReportsPanel({ canRun }: { canRun: boolean }) {
               </label>
               <label className="text-xs">
                 Max including shipping
-                <input name="max_delivered" type="number" min="0" step="0.01" className={inputClass} />
+                <input
+                  name="max_delivered"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className={inputClass}
+                />
               </label>
               <label className="text-xs">
                 Currency
@@ -178,20 +191,22 @@ export function WebReportsPanel({ canRun }: { canRun: boolean }) {
                 <input name="condition" placeholder="Used" maxLength={80} className={inputClass} />
               </label>
             </>
+          ) : null}
+          {job !== 'task_review' && (
+            <label className="max-w-72 text-xs">
+              Compare with
+              <select key={job} name="previous" className={inputClass}>
+                <option value="">No previous report</option>
+                {history
+                  .filter((x) => x.job === job)
+                  .map((x) => (
+                    <option key={x.report_id} value={x.report_id}>
+                      {x.title} · {new Date(x.created_at).toLocaleString()}
+                    </option>
+                  ))}
+              </select>
+            </label>
           )}
-          <label className="max-w-72 text-xs">
-            Compare with
-            <select key={job} name="previous" className={inputClass}>
-              <option value="">No previous report</option>
-              {history
-                .filter((x) => x.job === job)
-                .map((x) => (
-                  <option key={x.report_id} value={x.report_id}>
-                    {x.title} · {new Date(x.created_at).toLocaleString()}
-                  </option>
-                ))}
-            </select>
-          </label>
           <Button disabled={busy} type="submit">
             {busy ? 'Loading…' : 'Run report'}
           </Button>
@@ -226,11 +241,32 @@ export function WebReportsPanel({ canRun }: { canRun: boolean }) {
         <article className="space-y-3 text-sm" aria-live="polite">
           <h4 className="font-semibold">{report.title}</h4>
           <p>
-            {new Date(report.created_at).toLocaleString()} ·{' '}
-            {Object.entries(report.counts)
+            {new Date(report.observed_at || report.created_at).toLocaleString()}
+            {report.counts && ' · '}
+            {Object.entries(report.counts ?? {})
               .map(([k, n]) => n + ' ' + k)
               .join(' · ')}
           </p>
+          {report.tasks && (
+            <>
+              <p>
+                {report.total === 0
+                  ? 'No tasks are in review.'
+                  : report.tasks.length !== report.total
+                    ? `Showing ${report.tasks.length} of ${report.total} tasks in review.`
+                    : `${report.total} ${report.total === 1 ? 'task is' : 'tasks are'} in review.`}
+              </p>
+              {report.tasks.length > 0 && (
+                <ul className="list-disc space-y-1 pl-5">
+                  {report.tasks.map((task) => (
+                    <li key={task.id}>
+                      #{task.id} · {task.title}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
           {report.milestone && <p>{report.milestone}</p>}
           {report.warnings?.map((w) => (
             <p key={w} className="text-amber-400">
@@ -315,7 +351,9 @@ export function WebReportsPanel({ canRun }: { canRun: boolean }) {
                       </td>
                       <td>{money(r.price)}</td>
                       <td>{money(r.shipping)}</td>
-                      <td>{r.delivered_price ? r.delivered_price + ' ' + r.currency : 'Unknown'}</td>
+                      <td>
+                        {r.delivered_price ? r.delivered_price + ' ' + r.currency : 'Unknown'}
+                      </td>
                       <td>
                         {r.verdict} · {r.reasons.join(', ')}
                       </td>

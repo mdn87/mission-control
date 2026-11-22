@@ -98,6 +98,21 @@
     }
   ],
   "paths": {
+    "/api/lugos/review-board": {
+      "get": {
+        "tags": ["Tasks"],
+        "summary": "Read the signed-in workspace's Review column",
+        "description": "Returns a read-only HTML view with the total count and up to 200 tasks in task ID order. The signed-in session determines the workspace.",
+        "security": [{"sessionCookie": []}],
+        "responses": {
+          "200": {
+            "description": "The current Review column",
+            "content": {"text/html": {"schema": {"type": "string"}}}
+          },
+          "401": {"description": "A current approved user session is required"}
+        }
+      }
+    },
     "/api/activities": {
       "get": {
         "tags": [

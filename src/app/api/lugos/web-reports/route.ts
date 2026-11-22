@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
+import { issueReviewGrant, revokeReviewGrant } from '@/integrations/lugos/review-board'
 import {
   callWebReport,
   reportOwner,
@@ -41,10 +42,19 @@ export async function POST(request: Request) {
   }
   const parsed = webReportRequest.safeParse(raw)
   if (!parsed.success) return reply({ error: 'Invalid report fields.' }, 400)
-  if (['dias', 'marketplace'].includes(parsed.data.action) && auth.user.role === 'viewer') {
+  if (['dias', 'marketplace', 'task_review'].includes(parsed.data.action) && auth.user.role === 'viewer') {
     return reply({ error: 'An operator role is required to run a new report.' }, 403)
   }
   try {
+    if (parsed.data.action === 'task_review') {
+      const grant = issueReviewGrant(request, owner)
+      if (!grant) return reply({ error: 'A current operator browser session is required.' }, 403)
+      try {
+        return reply(await callWebReport(parsed.data, owner, grant))
+      } finally {
+        revokeReviewGrant(grant)
+      }
+    }
     return reply(await callWebReport(parsed.data, owner))
   } catch (error) {
     return error instanceof WebReportError

@@ -275,7 +275,9 @@ export function proxy(request: NextRequest) {
     // Both formats are exactly 48 hex chars after the prefix.
     const looksLikeDbBackedApiKey = /^mca?_[a-f0-9]{48}$/i.test(apiKey)
 
-    if (sessionToken || hasValidApiKey || looksLikeDbBackedApiKey || proxyAttested) {
+    const delegatedReviewRead = pathname === '/api/lugos/review-board' && request.method === 'GET' &&
+      /^[a-f0-9]{64}$/.test(request.headers.get('x-weir-review-grant') || '')
+    if (sessionToken || hasValidApiKey || looksLikeDbBackedApiKey || proxyAttested || delegatedReviewRead) {
       const { response, nonce } = nextResponseWithNonce(request)
       return addSecurityHeaders(response, request, nonce)
     }

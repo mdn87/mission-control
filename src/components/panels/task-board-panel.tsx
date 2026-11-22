@@ -952,7 +952,9 @@ export function TaskBoardPanel() {
           >
             {/* Column Header */}
             <div className={`${column.color} px-4 py-3 rounded-t-xl flex justify-between items-center border-b border-border/30`}>
-              <h3 className="font-semibold text-sm tracking-wide">{column.title}</h3>
+              <h3 className="font-semibold text-sm tracking-wide">
+                {column.key === 'review' ? <a href="/api/lugos/review-board" className="underline underline-offset-2">{column.title}</a> : column.title}
+              </h3>
               <span className="text-xs font-mono bg-white/10 px-2 py-0.5 rounded-md min-w-7 text-center">
                 {tasksByStatus[column.key]?.length || 0}
               </span>
