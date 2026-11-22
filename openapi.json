@@ -98,6 +98,50 @@
     }
   ],
   "paths": {
+    "/api/lugos/saved-task": {
+      "get": {
+        "tags": ["Tasks"],
+        "summary": "Read the private rehearsal task and the owner's saved decisions",
+        "security": [{"sessionCookie": []}],
+        "parameters": [{"name": "job", "in": "query", "schema": {"$ref": "#/components/schemas/SavedTaskCommandId"}, "description": "Include this decision and the independent readback of its receipt."}],
+        "responses": {
+          "200": {"description": "The task, recent decisions, passkey enrollment, and the requested review and evidence when supplied"},
+          "401": {"description": "An authenticated operator session is required"},
+          "403": {"description": "Only the signed-in local rehearsal owner may open this task"},
+          "404": {"description": "The private rehearsal or WebAuthn is disabled"},
+          "409": {"description": "The requested review is unknown or unavailable"}
+        }
+      },
+      "post": {
+        "tags": ["Tasks"],
+        "summary": "Review, approve, decline, resume or request an undo for a private task title",
+        "security": [{"sessionCookie": []}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"oneOf": [
+            {"type": "object", "additionalProperties": false, "required": ["operation", "after"],
+             "properties": {"operation": {"const": "prepare"}, "after": {"type": "string", "minLength": 1, "maxLength": 500, "description": "An NFC-normalized title with visible text and no outer whitespace."}}},
+            {"type": "object", "additionalProperties": false, "required": ["operation", "command_id"],
+             "properties": {"operation": {"const": "undo"}, "command_id": {"$ref": "#/components/schemas/SavedTaskCommandId"}}},
+            {"type": "object", "additionalProperties": false, "required": ["operation", "command_id", "proposal_hash"],
+             "properties": {"operation": {"enum": ["options", "decline", "resume"]}, "command_id": {"$ref": "#/components/schemas/SavedTaskCommandId"}, "proposal_hash": {"$ref": "#/components/schemas/SavedTaskProposalHash"}}},
+            {"type": "object", "additionalProperties": false, "required": ["operation", "command_id", "proposal_hash", "challenge_id", "response"],
+             "properties": {"operation": {"const": "approve"}, "command_id": {"$ref": "#/components/schemas/SavedTaskCommandId"}, "proposal_hash": {"$ref": "#/components/schemas/SavedTaskProposalHash"},
+                            "challenge_id": {"type": "string", "minLength": 1, "maxLength": 256}, "response": {"type": "object", "description": "WebAuthn authentication response to the review-bound challenge."}}}
+          ]}}}
+        },
+        "responses": {
+          "200": {"description": "Passkey options, a declined or withdrawn decision, or the current execution result"},
+          "201": {"description": "A proposed change or undo with its command ID and proposal hash"},
+          "202": {"description": "The outcome is unknown. Reopen the job to check the saved evidence."},
+          "400": {"description": "Invalid request or body larger than 16 KiB"},
+          "401": {"description": "An authenticated operator session is required"},
+          "403": {"description": "Only the signed-in local rehearsal owner may act on this task"},
+          "404": {"description": "The private rehearsal or WebAuthn is disabled"},
+          "409": {"description": "The review, passkey grant or destination state does not permit this operation"}
+        }
+      }
+    },
     "/api/lugos/field-review": {
       "get": {
         "tags": ["Auth"],
@@ -11874,6 +11918,8 @@
       }
     },
     "schemas": {
+      "SavedTaskCommandId": {"type": "string", "pattern": "^saved-[0-9a-f]{32}$"},
+      "SavedTaskProposalHash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
       "Error": {
         "type": "object",
         "required": [

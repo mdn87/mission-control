@@ -21,6 +21,11 @@ const fieldRequest = remoteRelayEnqueueSchema.extend({
   decision: z.literal('approve'),
 }).strict()
 
+const savedTaskRequest = remoteRelayEnqueueSchema.extend({
+  audience: z.literal('weir.rehearsal.saved-task'), action_id: z.literal('rename-private-task-v1'),
+  device_id: z.literal('saved-task-rehearsal'), decision: z.literal('approve'),
+}).strict()
+
 export interface RelaySigningKey {
   key_id: string
   issuer_id: string
@@ -73,7 +78,12 @@ export class RemoteRelaySigner {
     return this.signValidated(fieldRequest.parse(input))
   }
 
-  private signValidated(request: RemoteRelayEnqueueInput | z.infer<typeof fieldRequest>): RemoteDecisionCapsule {
+  signSavedTaskRehearsal(input: z.infer<typeof savedTaskRequest>): RemoteDecisionCapsule {
+    if (!this.options.enabled?.()) throw new RelaySignerUnavailableError('saved_task_issuer_disabled')
+    return this.signValidated(savedTaskRequest.parse(input))
+  }
+
+  private signValidated(request: RemoteRelayEnqueueInput | z.infer<typeof fieldRequest> | z.infer<typeof savedTaskRequest>): RemoteDecisionCapsule {
     assertParameterFreeRemoteDecision(request)
     const key = this.provider.activeSigningKey()
     if (key.private_key.type !== 'private'
