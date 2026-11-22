@@ -98,6 +98,45 @@
     }
   ],
   "paths": {
+    "/api/lugos/field-review": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Read the designated owner's current Linux field rehearsal",
+        "security": [{"sessionCookie": []}],
+        "responses": {
+          "200": {"description": "The exact field review and its awaiting_passkey or approved state"},
+          "401": {"description": "An authenticated operator session is required"},
+          "403": {"description": "The session must belong to the configured local owner"},
+          "404": {"description": "The rehearsal or WebAuthn is disabled"},
+          "409": {"description": "A current protected review is unavailable"}
+        }
+      },
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Request or complete a passkey assertion for the displayed rehearsal",
+        "security": [{"sessionCookie": []}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"oneOf": [
+            {"type": "object", "additionalProperties": false, "required": ["operation", "review_hash"],
+             "properties": {"operation": {"const": "options"}, "review_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+            {"type": "object", "additionalProperties": false, "required": ["operation", "review_hash", "challenge_id", "response"],
+             "properties": {"operation": {"const": "approve"}, "review_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+                            "challenge_id": {"type": "string"}, "response": {"type": "object"}}}
+          ]}}}
+        },
+        "responses": {
+          "200": {"description": "WebAuthn options and the challenge ID"},
+          "202": {"description": "Mission Control recorded approval for the supplied review hash"},
+          "400": {"description": "Invalid request, origin, challenge or assertion"},
+          "401": {"description": "An authenticated operator session is required"},
+          "403": {"description": "The session must belong to the configured local owner"},
+          "404": {"description": "The rehearsal or WebAuthn is disabled"},
+          "409": {"description": "The review changed or the owner has no enrolled passkey"},
+          "503": {"description": "The protected rehearsal service is unavailable"}
+        }
+      }
+    },
     "/api/lugos/review-board": {
       "get": {
         "tags": ["Tasks"],

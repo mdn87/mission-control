@@ -14,6 +14,12 @@ import {
   type RemoteRelayEnqueueInput,
   type UnsignedRemoteDecisionCapsule,
 } from './remote-decision-contract'
+import { z } from 'zod'
+
+const fieldRequest = remoteRelayEnqueueSchema.extend({
+  audience: z.enum(['weir.rehearsal.first-fill', 'weir.rehearsal.first-fill.enrollment']),
+  decision: z.literal('approve'),
+}).strict()
 
 export interface RelaySigningKey {
   key_id: string
@@ -59,7 +65,15 @@ export class RemoteRelaySigner {
     if (!(this.options.enabled ?? relayIssuerEnabled)()) {
       throw new RelaySignerUnavailableError('relay_issuer_disabled')
     }
-    const request = remoteRelayEnqueueSchema.parse(input)
+    return this.signValidated(remoteRelayEnqueueSchema.parse(input))
+  }
+
+  signFieldRehearsal(input: z.infer<typeof fieldRequest>): RemoteDecisionCapsule {
+    if (!this.options.enabled?.()) throw new RelaySignerUnavailableError('field_issuer_disabled')
+    return this.signValidated(fieldRequest.parse(input))
+  }
+
+  private signValidated(request: RemoteRelayEnqueueInput | z.infer<typeof fieldRequest>): RemoteDecisionCapsule {
     assertParameterFreeRemoteDecision(request)
     const key = this.provider.activeSigningKey()
     if (key.private_key.type !== 'private'
