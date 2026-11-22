@@ -154,7 +154,9 @@ function Deploy-Docker {
     Push-Location $script:InstallDir
     try {
         $env:MC_PORT = $script:Port
-        docker compose up -d --build
+        # Credentials reach the container only through the GLAS launcher.
+        & python scripts/with-glas.py --exec node scripts/docker-up.cjs
+        if ($LASTEXITCODE -ne 0) { Stop-WithError 'GLAS-backed docker compose launch failed' }
 
         Write-MC "Waiting for Mission Control to become healthy..."
         $retries = 30
@@ -326,7 +328,7 @@ function Main {
     Assert-GlasConfiguration
 
     switch ($Mode) {
-        "docker" { Stop-WithError 'The Docker installer does not provide a BWS-backed credential launch; use local mode' }
+        "docker" { Deploy-Docker }
         "local"  { Deploy-Local }
         default  { Stop-WithError "Unknown deploy mode: $Mode" }
     }

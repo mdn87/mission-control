@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "consumer": {
+    "id": "mission-control",
+    "name": "Mission Control server",
+    "project": "mission-control",
+    "environment": "production",
+    "host": "local"
+  },
+  "secrets": [
+    {
+      "secret_id": "00000000-0000-0000-0000-000000000001",
+      "env": "AUTH_SECRET",
+      "name": "Mission Control session secret",
+      "provider": "mission-control",
+      "kind": "unknown",
+      "account": "mission-control service",
+      "purpose": "Signs session cookies. Replace this placeholder with the BWS secret ID.",
+      "permissions": [],
+      "manage_url": null,
+      "rotation_notes": "Replacing the value signs out every session. Restart the service after changing it in BWS."
+    },
+    {
+      "secret_id": "00000000-0000-0000-0000-000000000002",
+      "env": "API_KEY",
+      "name": "Mission Control API key",
+      "provider": "mission-control",
+      "kind": "api_key",
+      "account": "mission-control service",
+      "purpose": "Authenticates agent and CLI clients. Replace this placeholder with the BWS secret ID.",
+      "permissions": [],
+      "manage_url": null,
+      "rotation_notes": "Update the matching MC_API_KEY entry used by the CLI manifest, then restart the service."
+    }
+  ]
+}

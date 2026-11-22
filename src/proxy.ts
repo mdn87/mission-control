@@ -38,6 +38,8 @@ function parseForwardedHost(forwarded: string | null): string[] {
   return hosts
 }
 
+const UNSPECIFIED_BIND_HOSTS = new Set(['0.0.0.0', '::'])
+
 function getRequestHostCandidates(request: NextRequest): string[] {
   const rawCandidates = [
     ...(request.headers.get('x-forwarded-host') || '').split(','),
@@ -45,12 +47,15 @@ function getRequestHostCandidates(request: NextRequest): string[] {
     ...(request.headers.get('x-forwarded-server') || '').split(','),
     ...parseForwardedHost(request.headers.get('forwarded')),
     request.headers.get('host') || '',
-    request.nextUrl.host || '',
-    request.nextUrl.hostname || '',
   ]
-
-  const candidates = rawCandidates
+  // In a container, Next reports its bind address (0.0.0.0 or ::) as the URL
+  // host. That is not a host the client asked for, so it is not checked; a
+  // client-sent Host or forwarded header of 0.0.0.0 is still checked and refused.
+  const urlCandidates = [request.nextUrl.host || '', request.nextUrl.hostname || '']
     .map(normalizeHostname)
+    .filter((host) => !UNSPECIFIED_BIND_HOSTS.has(host))
+
+  const candidates = [...rawCandidates.map(normalizeHostname), ...urlCandidates]
     .filter(Boolean)
 
   return [...new Set(candidates)]

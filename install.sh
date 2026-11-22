@@ -146,9 +146,11 @@ setup_env() {
 # ── Docker deployment ─────────────────────────────────────────────────────────
 deploy_docker() {
   info "Starting Docker deployment..."
+  cd "$INSTALL_DIR"
 
   export MC_PORT
-  docker compose up -d --build
+  # Credentials reach the container only through the GLAS launcher.
+  python3 scripts/with-glas.py --exec node scripts/docker-up.cjs || die "GLAS-backed docker compose launch failed"
 
   # Wait for healthy
   info "Waiting for Mission Control to become healthy..."
@@ -373,7 +375,7 @@ main() {
   setup_env
 
   case "$DEPLOY_MODE" in
-    docker) die "The Docker installer does not provide a BWS-backed credential launch; use local mode" ;;
+    docker) deploy_docker ;;
     local)  deploy_local ;;
     *)      die "Unknown deploy mode: $DEPLOY_MODE" ;;
   esac

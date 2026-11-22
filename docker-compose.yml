@@ -6,6 +6,17 @@ services:
       - "${MC_PORT:-3000}:${PORT:-3000}"
     environment:
       - PORT=${PORT:-3000}
+      # ── Hosts answered in production (comma-separated; anything else gets 403) ──
+      # Every host a request carries must match. localhost and 127.0.0.1 are
+      # always allowed; the container's bind address is never checked. Set
+      # MC_ALLOWED_HOSTS to replace the lugos-host names.
+      - MC_ALLOWED_HOSTS=${MC_ALLOWED_HOSTS:-10.0.1.33,lugos-host,knot.newman.foo}
+      # ── Credentials: never listed here ──
+      # Start through `pnpm docker:up`. It runs under the GLAS manifest in
+      # config/glas.local.json and writes each mapped credential into the
+      # container's /tmp tmpfs over `docker exec` stdin, so values stay out of
+      # the container configuration that `docker inspect` shows. Without that
+      # delivery the entrypoint refuses to start.
       # ── Server-side gateway connection (MC backend → gateway) ──
       # host.docker.internal resolves to the Docker host on Docker Desktop (macOS/Windows).
       # On Linux, the extra_hosts entry below makes this work.

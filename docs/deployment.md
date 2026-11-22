@@ -11,7 +11,8 @@ Set `GLAS_PYTHON` to that Python interpreter, `GLAS_ROOT` if using a source
 checkout, and `GLAS_HOME` to the selected native credential profile's inventory.
 The profile must be able to read every BWS entry referenced by the manifest.
 
-Create the ignored `config/glas.local.json` reference manifest. At minimum map
+Copy `config/glas.example.json` to the ignored `config/glas.local.json` and
+replace the placeholder secret IDs with the IDs `glas add` printed. At minimum map
 separate BWS entries to `AUTH_SECRET` and `API_KEY`. Existing installations should
 reuse the current values while migrating so sessions and agent clients continue to
 work. Map `LUGOS_OPERATOR_API_TOKEN` when the operator integration is enabled,
@@ -35,8 +36,9 @@ The Windows and Unix installers require the manifest and `GLAS_HOME` before
 starting the server. Set the nonsecret `PORT` as needed. Create the initial admin
 account at `/setup` after the service starts.
 
-For the CLI, TUI, and MCP client, create a separate ignored
-`config/glas.cli.local.json` manifest binding a BWS entry to `MC_API_KEY`.
+For the CLI, TUI, and MCP client, copy `config/glas.cli.example.json` to the
+ignored `config/glas.cli.local.json`; it binds the same BWS entry as `API_KEY` to
+`MC_API_KEY`.
 `scripts/with-glas.py --exec node scripts/mc-cli.cjs ...` selects that manifest.
 Legacy profiles may still select a nonsecret URL, but their API key and cookie
 fields are ignored. CLI login and command-line API key flags are disabled.
@@ -47,9 +49,40 @@ the provider's expected name (for example, `ANTHROPIC_API_KEY`). The wizard
 does not accept or store provider keys; its old `set-env` API action is rejected.
 Device authorization remains available for providers that support it.
 
-The Docker entry point requires `AUTH_SECRET` and `API_KEY` and never generates
-or loads credential files. The local Docker installer is disabled until its
-service identity has a BWS backed launch path; use the local mode above.
+## Docker
+
+Start the container with `pnpm docker:up` (or `bash install.sh --docker`,
+`.\install.ps1 -Mode docker`). These run `scripts/docker-up.cjs` under GLAS
+with `config/glas.local.json`. The script runs
+`docker compose up -d --build --force-recreate` without the credentials, then
+writes each credential the manifest maps into the container's `/tmp` tmpfs
+through `docker exec` standard input. The entry point waits up to 60 seconds for
+that delivery, loads the values into the server process, and deletes the files.
+`docker-compose.yml` lists no credential names, so the values never appear in
+the container configuration shown by `docker inspect` or stored under
+`/var/lib/docker`. The entry point still refuses to start when `AUTH_SECRET` or
+`API_KEY` is missing and never generates credentials.
+
+The container runs in production mode, so it answers only the hosts in
+`MC_ALLOWED_HOSTS` (plus localhost and 127.0.0.1) and gives everything else 403.
+Compose defaults the list to lugos-host's names, `10.0.1.33,lugos-host,knot.newman.foo`.
+Next reports the container's bind address (`0.0.0.0`) as the URL host; the host
+check ignores that value, but a client that sends `Host: 0.0.0.0` is refused. Set
+`MC_ALLOWED_HOSTS` in the environment that runs `pnpm docker:up` for other hosts.
+The hardened overlay (`docker-compose.hardened.yml`) keeps its loopback-only
+default, `localhost,127.0.0.1`, for use behind a reverse proxy on the same host;
+set `MC_HARDENED_ALLOWED_HOSTS` to widen it.
+
+Docker access on the host is still root-equivalent: anyone in the `docker`
+group can `docker exec` into the container and read the server's environment.
+
+The credentials live only in the running container's memory. A container
+restart (crash, `docker compose restart`, or host reboot) starts without them,
+and the entry point exits after its wait; `restart: unless-stopped` then keeps
+retrying. Run `pnpm docker:up` again to recover, and after changing a value in
+BWS. Extra arguments are Compose options placed before `up`, so the hardened
+overlay is
+`node scripts/launch-glas.cjs --exec node scripts/docker-up.cjs -f docker-compose.yml -f docker-compose.hardened.yml`.
 
 ## Other service identities
 

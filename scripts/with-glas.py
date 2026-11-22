@@ -41,6 +41,8 @@ def main():
         upper=name.upper()
         if upper=='BWS_ACCESS_TOKEN' or upper.endswith(('_TOKEN','_SECRET','_PASSWORD','_API_KEY','_CLIENT_SECRET')) or upper in ('AUTH_PASS','API_KEY'):
             env.pop(name,None)
+    # Nonsecret: lets scripts/docker-up.cjs read which names GLAS maps.
+    env['MC_GLAS_MANIFEST']=str(manifest.resolve())
     if 'GLAS_HOME' not in env and glas is not None:
         env['GLAS_HOME']=str(glas/'.glas')
     sources=[]
