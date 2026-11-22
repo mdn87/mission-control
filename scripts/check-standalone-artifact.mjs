@@ -5,6 +5,7 @@ const root = path.resolve('.next/standalone')
 const requiredFiles = [
   'server.js',
   'dist-relay/relay/server.js',
+  'dist-relay/relay/field-issuer.js',
   'node_modules/zod/package.json',
   'openapi.json',
   'ops/templates/openclaw-gateway@.service',
