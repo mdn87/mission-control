@@ -202,9 +202,13 @@ export function createSession(
 
 export function validateSession(token: string): (User & { sessionId: number }) | null {
   if (!token) return null
+  return lookupSessionHash(hashSessionToken(token))
+}
+
+// Internal session references can recheck revocation without retaining the browser cookie.
+export function lookupSessionHash(tokenHash: string): (User & { sessionId: number }) | null {
   const db = getDatabase()
   const now = Math.floor(Date.now() / 1000)
-  const tokenHash = hashSessionToken(token)
 
   const row = db.prepare(`
     SELECT u.id, u.username, u.display_name, u.role, u.provider, u.email, u.avatar_url, u.is_approved,
@@ -677,7 +681,7 @@ export function hashApiKey(rawKey: string): string {
   return createHash('sha256').update(rawKey).digest('hex')
 }
 
-function hashSessionToken(rawToken: string): string {
+export function hashSessionToken(rawToken: string): string {
   return createHash('sha256').update(rawToken).digest('hex')
 }
 
