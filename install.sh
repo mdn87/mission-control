@@ -150,7 +150,7 @@ deploy_docker() {
 
   export MC_PORT
   # Credentials reach the container only through the GLAS launcher.
-  python3 scripts/with-glas.py --exec docker compose up -d --build || die "GLAS-backed docker compose launch failed"
+  python3 scripts/with-glas.py --exec node scripts/docker-up.cjs || die "GLAS-backed docker compose launch failed"
 
   # Wait for healthy
   info "Waiting for Mission Control to become healthy..."

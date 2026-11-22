@@ -30,11 +30,11 @@ node .next/standalone/server.js   # standalone mode (after build)
 ## Docker
 
 ```bash
-pnpm docker:up                    # docker compose up -d --build under GLAS
+pnpm docker:up                    # compose up under GLAS, credentials via docker exec
 bash install.sh --docker          # full guided setup (also through GLAS)
 ```
 
-Credentials come from `config/glas.local.json` (copy `config/glas.example.json`). Plain `docker compose up` starts without them and the entrypoint refuses to run. Production hardening: see `docs/deployment.md` → Docker.
+Credentials come from `config/glas.local.json` (copy `config/glas.example.json`) and reach the container over `docker exec` stdin, not container env. Plain `docker compose up` starts without them and the entrypoint refuses to run. Production hardening: see `docs/deployment.md` → Docker.
 
 ## Tests
 

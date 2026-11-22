@@ -155,7 +155,7 @@ function Deploy-Docker {
     try {
         $env:MC_PORT = $script:Port
         # Credentials reach the container only through the GLAS launcher.
-        & python scripts/with-glas.py --exec docker compose up -d --build
+        & python scripts/with-glas.py --exec node scripts/docker-up.cjs
         if ($LASTEXITCODE -ne 0) { Stop-WithError 'GLAS-backed docker compose launch failed' }
 
         Write-MC "Waiting for Mission Control to become healthy..."

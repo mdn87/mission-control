@@ -17,7 +17,7 @@
     "start": "pnpm run verify:node && node scripts/launch-glas.cjs --start",
     "start:standalone": "pnpm run verify:node && bash scripts/start-standalone.sh",
     "deploy:standalone": "pnpm run verify:node && bash scripts/deploy-standalone.sh",
-    "docker:up": "node scripts/launch-glas.cjs --exec docker compose up -d --build",
+    "docker:up": "node scripts/launch-glas.cjs --exec node scripts/docker-up.cjs",
     "lint": "pnpm run verify:node && eslint .",
     "typecheck": "pnpm run verify:node && tsc --noEmit",
     "test": "pnpm run verify:node && vitest run",

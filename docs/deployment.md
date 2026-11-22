@@ -52,20 +52,27 @@ Device authorization remains available for providers that support it.
 ## Docker
 
 Start the container with `pnpm docker:up` (or `bash install.sh --docker`,
-`.\install.ps1 -Mode docker`). These run `docker compose up -d --build` under
-GLAS with `config/glas.local.json`. `docker-compose.yml` lists the credential
-names without values, so Compose passes through only what GLAS injected; the
-launcher first drops any `*_TOKEN`, `*_SECRET`, `API_KEY`, and similar names
-inherited from the shell. The entry point still refuses to start when
-`AUTH_SECRET` or `API_KEY` is missing and never generates or loads credential
-files.
+`.\install.ps1 -Mode docker`). These run `scripts/docker-up.cjs` under GLAS
+with `config/glas.local.json`. The script runs
+`docker compose up -d --build --force-recreate` without the credentials, then
+writes each credential the manifest maps into the container's `/tmp` tmpfs
+through `docker exec` standard input. The entry point waits up to 60 seconds for
+that delivery, loads the values into the server process, and deletes the files.
+`docker-compose.yml` lists no credential names, so the values never appear in
+the container configuration shown by `docker inspect` or stored under
+`/var/lib/docker`. The entry point still refuses to start when `AUTH_SECRET` or
+`API_KEY` is missing and never generates credentials.
 
-Two consequences of Docker's model: the values live in the container's
-configuration, so anyone who can run `docker inspect` on the host can read
-them; and `restart: unless-stopped` reuses the values captured at the last
-`pnpm docker:up`. After changing a value in BWS, run `pnpm docker:up` again
-rather than `docker compose restart`. The hardened overlay applies the same
-way: `node scripts/launch-glas.cjs --exec docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d`.
+Docker access on the host is still root-equivalent: anyone in the `docker`
+group can `docker exec` into the container and read the server's environment.
+
+The credentials live only in the running container's memory. A container
+restart (crash, `docker compose restart`, or host reboot) starts without them,
+and the entry point exits after its wait; `restart: unless-stopped` then keeps
+retrying. Run `pnpm docker:up` again to recover, and after changing a value in
+BWS. Extra arguments are Compose options placed before `up`, so the hardened
+overlay is
+`node scripts/launch-glas.cjs --exec node scripts/docker-up.cjs -f docker-compose.yml -f docker-compose.hardened.yml`.
 
 ## Other service identities
 

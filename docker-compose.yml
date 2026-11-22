@@ -6,15 +6,12 @@ services:
       - "${MC_PORT:-3000}:${PORT:-3000}"
     environment:
       - PORT=${PORT:-3000}
-      # ── Credentials (names only; values come from GLAS) ──
-      # Start through `pnpm docker:up`, which runs `docker compose` under the
-      # GLAS manifest in config/glas.local.json. A bare name passes the value
-      # through from that launcher; when it is unset the entrypoint refuses to start.
-      - AUTH_SECRET
-      - API_KEY
-      - LUGOS_OPERATOR_API_TOKEN
-      - GITHUB_TOKEN
-      - OPENCLAW_GATEWAY_TOKEN
+      # ── Credentials: never listed here ──
+      # Start through `pnpm docker:up`. It runs under the GLAS manifest in
+      # config/glas.local.json and writes each mapped credential into the
+      # container's /tmp tmpfs over `docker exec` stdin, so values stay out of
+      # the container configuration that `docker inspect` shows. Without that
+      # delivery the entrypoint refuses to start.
       # ── Server-side gateway connection (MC backend → gateway) ──
       # host.docker.internal resolves to the Docker host on Docker Desktop (macOS/Windows).
       # On Linux, the extra_hosts entry below makes this work.
