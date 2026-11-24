@@ -13,7 +13,7 @@ def main():
     client_launch=(args[:2]==['--exec','node'] and len(args)>2
                    and Path(args[2]).name in client_commands)
     default_manifest=ROOT/'config'/('glas.cli.local.json' if client_launch else 'glas.local.json')
-    manifest=Path(os.environ.get('GLAS_MANIFEST', default_manifest))
+    manifest=Path(os.environ.get('GLAS_MANIFEST', default_manifest)).resolve()
     candidates=[Path(os.environ['GLAS_ROOT'])] if os.environ.get('GLAS_ROOT') else [p/n for p in ROOT.parents for n in ('lugos/glas','glas')]
     glas=next((p for p in candidates if (p/'src/glas/cli.py').is_file()),None)
     if not manifest.is_file():
@@ -41,6 +41,10 @@ def main():
         upper=name.upper()
         if upper=='BWS_ACCESS_TOKEN' or upper.endswith(('_TOKEN','_SECRET','_PASSWORD','_API_KEY','_CLIENT_SECRET')) or upper in ('AUTH_PASS','API_KEY'):
             env.pop(name,None)
+    if args[:1]==['--standalone']:
+        # The standalone server runs from .next/standalone, which builds wipe.
+        # Keep the default data directory at the repository root.
+        env.setdefault('MISSION_CONTROL_DATA_DIR',str(ROOT/'.data'))
     if 'GLAS_HOME' not in env and glas is not None:
         env['GLAS_HOME']=str(glas/'.glas')
     sources=[]
