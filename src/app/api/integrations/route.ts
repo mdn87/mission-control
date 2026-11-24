@@ -398,7 +398,22 @@ export async function POST(request: NextRequest) {
   if (body.action !== 'test') {
     return NextResponse.json({ error: 'Configure integration credentials in BWS and the GLAS manifest' }, { status: 409 })
   }
-  const integration = INTEGRATIONS.find(i => i.id === body.integrationId)
+  let integration: IntegrationDef | undefined = INTEGRATIONS.find(i => i.id === body.integrationId)
+  if (!integration) {
+    // Plugin integrations stay testable; only credential writes moved to BWS.
+    const pi = getPluginIntegrations().find(i => i.id === body.integrationId)
+    if (pi) {
+      integration = {
+        id: pi.id,
+        name: pi.name,
+        category: pi.category,
+        envVars: pi.envVars,
+        vaultItem: pi.vaultItem,
+        testable: pi.testable,
+        recommendation: pi.recommendation,
+      }
+    }
+  }
   if (!integration) return NextResponse.json({ error: 'Unknown integration' }, { status: 404 })
   return handleTest(integration, request, auth.user)
 }

@@ -64,6 +64,21 @@ list_listener_pids() {
   ' | sort -u
 }
 
+# The launcher supervises the Node server (with-glas.py -> GLAS -> node), so
+# the listener is a descendant of the pid we started, not that pid itself.
+is_same_or_descendant() {
+  local pid="$1"
+  local ancestor="$2"
+
+  while [[ -n "$pid" && "$pid" != "0" && "$pid" != "1" ]]; do
+    if [[ "$pid" == "$ancestor" ]]; then
+      return 0
+    fi
+    pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+  done
+  return 1
+}
+
 stop_pid() {
   local pid="$1"
   local label="$2"
@@ -214,8 +229,8 @@ if [[ -z "${listener_pid:-}" ]]; then
   echo "error: no listener detected on port $PORT after startup" >&2
   exit 1
 fi
-if [[ "$listener_pid" != "$new_pid" ]]; then
-  echo "error: port $PORT is owned by pid=$listener_pid, expected new pid=$new_pid" >&2
+if ! is_same_or_descendant "$listener_pid" "$new_pid"; then
+  echo "error: port $PORT is owned by pid=$listener_pid, not started by new pid=$new_pid" >&2
   exit 1
 fi
 

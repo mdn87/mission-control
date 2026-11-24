@@ -39,6 +39,19 @@ await cp(path.resolve('node_modules/zod'), path.join(root, 'node_modules', 'zod'
   force: true,
 })
 
+// Next's standalone output omits client assets. Copy them at build time so
+// every launcher (installer, systemd unit, start-standalone) serves JS and CSS.
+await rm(path.join(root, '.next', 'static'), { recursive: true, force: true })
+await cp(path.resolve('.next/static'), path.join(root, '.next', 'static'), {
+  recursive: true,
+  force: true,
+})
+await rm(path.join(root, 'public'), { recursive: true, force: true })
+await cp(path.resolve('public'), path.join(root, 'public'), {
+  recursive: true,
+  force: true,
+})
+
 for (const entry of await readdir(root)) {
   if (!allowedRoots.has(entry)) await rm(path.join(root, entry), { recursive: true, force: true })
 }
